@@ -29,6 +29,10 @@ import dash
 from dash import dcc, html, Input, Output 
 locale.setlocale(locale.LC_TIME, "es_ES.utf8")
 
+
+app = dash.Dash(__name__)
+server = app.server
+
 # --- 1. CONFIGURACIÓN Y DATOS (Simulados para el ejemplo) ---
 df_seguimiento = pd.read_pickle('datos_tablero.pkl')
 
@@ -105,8 +109,6 @@ def crear_tarjeta_kpi(titulo, stats, color_header='#1a3e35'):
     ])
 
 # --- 3. DASHBOARD LAYOUT ---
-app = dash.Dash(__name__)
-server = app.server
 filtros_principales = ['Sector', 'Dependencia']
 filtros_sankey = ['ID_tablero', 'Responsable digitalización', 'Solución tecnológica']
 todos_los_filtros = filtros_principales + filtros_sankey
@@ -250,5 +252,6 @@ def update_dashboard(*filter_values):
 
 if __name__ == '__main__':
     app.run(debug=True)
+
 
 
