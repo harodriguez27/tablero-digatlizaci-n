@@ -1,21 +1,24 @@
+import dash
 from dash import dcc, html, Input, Output
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 import os
 
-app = dash.Dash(__name__)
-server = app.server
-
-# --- 1. CONFIGURACIÓN Y DATOS (Simulados para el ejemplo) ---
+# --- 1. CONFIGURACIÓN DE RUTAS Y CARGA DE DATOS ---
 df_seguimiento = pd.read_pickle('datos_tablero.pkl')
 
-# --- 2. FUNCIONES DE APOYO ---
+# --- 2. INICIALIZACIÓN DE LA APP ---
+app = dash.Dash(__name__)
+# Esta línea es VITAL para Render y el comando 'gunicorn app:server'
+server = app.server 
+
+# --- 3. FUNCIONES DE APOYO ---
 def format_number(n):
-    """Formatea números con separador de miles."""
     return f"{int(n):,}"
 
 def calcular_metricas_tarjetas(df_filtrado, df_original):
+    # Bases para porcentajes
     base_dep = df_original['Dependencia'].nunique() if 'Dependencia' in df_original.columns else 1
     base_tra = len(df_original)
     base_freq = df_original['Frecuencia 2024'].sum() if 'Frecuencia 2024' in df_original.columns else 1
@@ -31,12 +34,12 @@ def calcular_metricas_tarjetas(df_filtrado, df_original):
             "p_freq": (freq / base_freq * 100) if base_freq > 0 else 0
         }
 
-    # Segmentación de DataFrames
+    # Filtrados
     df_digitalizados = df_filtrado[df_filtrado['tramite_digitalizados'] == 'Digitalizado']
-    df_atdt = df_filtrado[df_filtrado['tramite_digitalizados_atdt'] == 'Digitalizado ATDT']
+    mask_atdt = df_filtrado['tramite_digitalizados_atdt'] == 'Digitalizado ATDT'
+    df_atdt = df_filtrado[mask_atdt]
     
-    # NUEVAS SEGMENTACIONES (Lógica corregida)
-    mask_atdt = df_filtrado['tramite_digitalizados'] == 'Digitalizado'
+    # Nuevas tarjetas E2E vs Entrada (Lógica corregida)
     df_punta_a_punta = df_filtrado[mask_atdt & (df_filtrado['Trámite Digital E2E'] == 'SI')]
     df_solo_entrada = df_filtrado[mask_atdt & (df_filtrado['Trámite Digital E2E'] == 'NO')]
 
@@ -82,14 +85,14 @@ def crear_tarjeta_kpi(titulo, stats, color_header='#1a3e35'):
         html.Div(contenido_filas, style={'padding': '10px 20px'})
     ])
 
-# --- 3. DASHBOARD LAYOUT ---
+# --- 4. DASHBOARD LAYOUT ---
 filtros_principales = ['Sector', 'Dependencia']
 filtros_sankey = ['ID_tablero', 'Responsable digitalización', 'Solución tecnológica']
 todos_los_filtros = filtros_principales + filtros_sankey
 
 app.layout = html.Div(style={'backgroundColor': '#f8faf9', 'padding': '20px', 'fontFamily': 'Segoe UI, Arial'}, children=[
     
-    # BARRA SUPERIOR DE FILTROS
+    # BARRA SUPERIOR
     html.Div(style={
         'display': 'flex', 'gap': '20px', 'padding': '20px', 'backgroundColor': '#1a3e35', 
         'borderRadius': '12px', 'marginBottom': '20px', 'boxShadow': '0 4px 15px rgba(0,0,0,0.1)'
@@ -98,16 +101,14 @@ app.layout = html.Div(style={'backgroundColor': '#f8faf9', 'padding': '20px', 'f
             html.Label(f"Filtrar {col}", style={'color': 'white', 'fontWeight': 'bold', 'marginBottom': '5px', 'display': 'block'}),
             dcc.Dropdown(
                 id=f'filter-{col}',
-                options=[{'label': str(v), 'value': v} for v in df_seguimiento[col].unique()],
+                options=[{'label': str(v), 'value': v} for v in sorted(df_seguimiento[col].unique())] if not df_seguimiento.empty else [],
                 multi=True, placeholder=f"Seleccionar {col}..."
             )
         ], style={'flex': '1'}) for col in filtros_principales
     ]),
 
-    # FILA 1 DE TARJETAS (Métricas Generales)
+    # CONTENEDORES DE TARJETAS
     html.Div(id='contenedor-tarjetas-1', style={'display': 'flex', 'margin': '0 -10px 20px -10px'}),
-
-    # FILA 2 DE TARJETAS (Métricas E2E vs Entrada)
     html.Div(id='contenedor-tarjetas-2', style={'display': 'flex', 'margin': '0 -10px 20px -10px'}),
 
     # TREEMAP
@@ -125,7 +126,7 @@ app.layout = html.Div(style={'backgroundColor': '#f8faf9', 'padding': '20px', 'f
             html.Label(col, style={'fontSize': '12px', 'fontWeight': 'bold', 'color': '#333'}),
             dcc.Dropdown(
                 id=f'filter-{col}',
-                options=[{'label': str(v), 'value': v} for v in df_seguimiento[col].unique()],
+                options=[{'label': str(v), 'value': v} for v in sorted(df_seguimiento[col].unique())] if not df_seguimiento.empty else [],
                 multi=True, placeholder="Todos..."
             )
         ], style={'flex': '1'}) for col in filtros_sankey
@@ -137,7 +138,7 @@ app.layout = html.Div(style={'backgroundColor': '#f8faf9', 'padding': '20px', 'f
     ])
 ])
 
-# --- 4. CALLBACK UNIFICADO ---
+# --- 5. CALLBACK UNIFICADO ---
 @app.callback(
     [Output('contenedor-tarjetas-1', 'children'),
      Output('contenedor-tarjetas-2', 'children'),
@@ -149,12 +150,12 @@ app.layout = html.Div(style={'backgroundColor': '#f8faf9', 'padding': '20px', 'f
 def update_dashboard(*filter_values):
     filtros_activos = {todos_los_filtros[i]: val for i, val in enumerate(filter_values) if val}
 
-    # FILTRADO DE DATOS
+    # FILTRADO
     dff = df_seguimiento.copy()
     for col, val in filtros_activos.items():
         dff = dff[dff[col].isin(val)]
 
-    # ACTUALIZACIÓN OPCIONES FILTROS EN CASCADA
+    # ACTUALIZACIÓN FILTROS CASCADA
     nuevas_opciones = []
     for col_objetivo in todos_los_filtros:
         dff_opciones = df_seguimiento.copy()
@@ -164,37 +165,28 @@ def update_dashboard(*filter_values):
         opciones = [{'label': str(v), 'value': v} for v in sorted(dff_opciones[col_objetivo].unique())]
         nuevas_opciones.append(opciones)
 
-    # GENERACIÓN DE MÉTRICAS Y TARJETAS
+    # MÉTRICAS
     stats = calcular_metricas_tarjetas(dff, df_seguimiento)
-    
     tarjetas_1 = [
         crear_tarjeta_kpi("TOTAL DE TRÁMITES", stats["SELECCIÓN"]),
         crear_tarjeta_kpi("DIGITALIZADOS 2024", stats["DIGITALIZADOS 2024"]),
-        crear_tarjeta_kpi("ATDT", stats["ATDT"]),
+        crear_tarjeta_kpi("ATDT (GENERAL)", stats["ATDT"]),
     ]
-    
     tarjetas_2 = [
-        crear_tarjeta_kpi("PUNTA A PUNTA", stats["PUNTA_A_PUNTA"], color_header='#2c5d50'),
-        crear_tarjeta_kpi("SOLO ENTRADA", stats["SOLO_ENTRADA"], color_header='#2c5d50'),
-        # Espaciador para mantener simetría
+        crear_tarjeta_kpi("ATDT: PUNTA A PUNTA", stats["PUNTA_A_PUNTA"], color_header='#2c5d50'),
+        crear_tarjeta_kpi("ATDT: SOLO ENTRADA", stats["SOLO_ENTRADA"], color_header='#2c5d50'),
         html.Div(style={'flex': '1', 'margin': '0 10px'})
     ]
 
-    # GENERACIÓN DEL TREEMAP
+    # TREEMAP
     if dff.empty:
         fig_tree = go.Figure().update_layout(title="Sin datos")
     else:
         df_tree = dff.groupby('Sector').size().reset_index(name='cuenta')
-        fig_tree = px.treemap(
-            df_tree,
-            path=[px.Constant("TODOS LOS SECTORES"), 'Sector'],
-            values='cuenta',
-            color='cuenta',
-            color_continuous_scale=['#d1dbd9', '#2c5d50', '#1a3e35']
-        )
+        fig_tree = px.treemap(df_tree, path=[px.Constant("TODOS LOS SECTORES"), 'Sector'], values='cuenta', color='cuenta', color_continuous_scale=['#d1dbd9', '#2c5d50', '#1a3e35'])
         fig_tree.update_layout(margin=dict(t=0, l=0, r=0, b=0), coloraxis_showscale=False)
 
-    # GENERACIÓN DEL SANKEY
+    # SANKEY
     if dff.empty:
         fig_sankey = go.Figure().update_layout(title="Sin datos")
     else:
@@ -225,8 +217,7 @@ def update_dashboard(*filter_values):
     return [tarjetas_1, tarjetas_2, fig_sankey, fig_tree] + nuevas_opciones
 
 if __name__ == '__main__':
-    app.run(debug=True)
-
+    app.run_server(debug=True)
 
 
 
