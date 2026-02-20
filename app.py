@@ -1,35 +1,4 @@
 import pandas as pd
-import numpy as np
-import time
-import gspread
-from gspread.exceptions import APIError
-from oauth2client.service_account import ServiceAccountCredentials
-from googleapiclient.discovery import build
-import re
-from gspread_dataframe import set_with_dataframe
-import ssl
-import requests
-import urllib3
-from urllib3.poolmanager import PoolManager
-from requests.adapters import HTTPAdapter
-from pathlib import Path
-from time import sleep
-import psycopg2
-from bs4 import BeautifulSoup
-from datetime import datetime, timedelta
-import calendar
-import locale
-from unidecode import unidecode
-import plotly.express as px
-import os
-import plotly.graph_objects as go
-from datetime import date
-import random
-import dash
-from dash import dcc, html, Input, Output 
-locale.setlocale(locale.LC_TIME, "es_ES.utf8")
-
-
 app = dash.Dash(__name__)
 server = app.server
 
@@ -252,6 +221,7 @@ def update_dashboard(*filter_values):
 
 if __name__ == '__main__':
     app.run(debug=True)
+
 
 
 
