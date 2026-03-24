@@ -77,7 +77,7 @@ app.layout = html.Div(style={'backgroundColor': '#fcfcfc', 'padding': '40px', 'f
         dcc.Graph(id='sankey-principal', config={'displayModeBar': False})
     ]),
 
-    # NUEVA SECCIÓN: SOLUCIONES POR RESPONSABLE
+    # SECCIÓN: SOLUCIONES POR RESPONSABLE
     html.Div(style={'maxWidth': '1350px', 'margin': '40px auto', 'backgroundColor': 'white', 'padding': '25px', 'borderRadius': '12px', 'boxShadow': '0 2px 10px rgba(0,0,0,0.05)'}, children=[
         html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '20px'}, children=[
             html.H2("Solución tecnológica por responsable", style={'color': '#1a3e35', 'fontSize': '24px', 'margin': '0', 'fontWeight': 'bold'}),
@@ -88,6 +88,24 @@ app.layout = html.Div(style={'backgroundColor': '#fcfcfc', 'padding': '40px', 'f
         ]),
         html.Div(id='mini-cards-soluciones', style={'display': 'flex', 'justifyContent': 'space-between', 'gap': '10px', 'marginBottom': '20px'}),
         dcc.Graph(id='barras-responsables', config={'displayModeBar': False})
+    ]),
+
+    # --- NUEVA SECCIÓN: VOLUMEN DE USO POR AÑO (Agregada al final) ---
+    html.Div(style={'maxWidth': '1350px', 'margin': '40px auto', 'backgroundColor': 'white', 'padding': '25px', 'borderRadius': '12px', 'boxShadow': '0 2px 10px rgba(0,0,0,0.05)'}, children=[
+        html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'flex-start', 'marginBottom': '20px'}, children=[
+            html.Div([
+                html.H2("Volumen de uso por año", style={'color': '#000', 'fontSize': '28px', 'margin': '0', 'fontWeight': 'bold'}),
+                html.P("Actos por año", style={'color': '#444', 'fontSize': '18px', 'margin': '5px 0'}),
+                html.P("Actualización: Marzo 2026", style={'color': '#999', 'fontSize': '14px', 'fontStyle': 'italic'}),
+            ]),
+            html.Div(style={'textAlign': 'right', 'fontSize': '13px', 'color': '#666'}, children=[
+                html.Span("Dependencias: "), html.Strong("Todas", style={'backgroundColor': '#7a8c89', 'color': 'white', 'padding': '4px 12px', 'borderRadius': '15px'}),
+                html.Br(),
+                html.Span("Sector: ", style={'marginTop': '10px', 'display': 'inline-block'}), html.Strong("Todos", style={'backgroundColor': '#7a8c89', 'color': 'white', 'padding': '4px 12px', 'borderRadius': '15px'}),
+            ])
+        ]),
+        html.Div(id='cards-años-uso', style={'display': 'flex', 'justifyContent': 'center', 'gap': '20px', 'marginBottom': '30px'}),
+        dcc.Graph(id='grafica-uso-lineas', config={'displayModeBar': False})
     ])
 ])
 
@@ -96,12 +114,14 @@ app.layout = html.Div(style={'backgroundColor': '#fcfcfc', 'padding': '40px', 'f
     [Output('kpi-row', 'children'),
      Output('sankey-principal', 'figure'),
      Output('mini-cards-soluciones', 'children'),
-     Output('barras-responsables', 'figure')],
+     Output('barras-responsables', 'figure'),
+     Output('cards-años-uso', 'children'),
+     Output('grafica-uso-lineas', 'figure')],
     [Input('filter-Sector', 'value'),
      Input('filter-Dependencia', 'value')]
 )
 def update_dashboard(sector, dependencia):
-    if df_seguimiento.empty: return [], go.Figure(), [], go.Figure()
+    if df_seguimiento.empty: return [], go.Figure(), [], go.Figure(), [], go.Figure()
 
     dff = df_seguimiento.copy()
     if sector: dff = dff[dff['Sector'].isin(sector)]
@@ -177,7 +197,6 @@ def update_dashboard(sector, dependencia):
     df_dep_all = dff[dff['Solución tecnológica'].str.contains('Dependencia', case=False, na=False)]
 
     for conf in config_soluciones:
-        # Mini tarjetas superiores
         sub = dff[dff['Solución tecnológica'] == conf['label']]
         vol_sub = sub['Frecuencia 2024'].sum()
         mini_cards.append(html.Div(style={'flex': '1', 'display': 'flex', 'border': '1px solid #ddd', 'borderRadius': '6px', 'overflow': 'hidden', 'height': '75px'}, children=[
@@ -192,7 +211,6 @@ def update_dashboard(sector, dependencia):
             ])
         ]))
 
-        # Barras Apiladas
         for resp in ['Fábrica de SW', 'Dependencia']:
             df_comp = df_fsw_all if resp == 'Fábrica de SW' else df_dep_all
             val = len(df_comp[df_comp['Solución tecnológica'] == conf['label']])
@@ -209,11 +227,74 @@ def update_dashboard(sector, dependencia):
         yaxis=dict(categoryorder='array', categoryarray=['Fábrica de SW', 'Dependencia'], tickfont=dict(size=14, color='#333', weight='bold'))
     )
 
-    # Etiquetas de total en cuadros grises
     fig_barras.add_annotation(x=len(df_dep_all), y='Dependencia', text=f"  {len(df_dep_all)}  ", xanchor='left', showarrow=False, bgcolor="#eee", font=dict(size=14, weight='bold'))
     fig_barras.add_annotation(x=len(df_fsw_all), y='Fábrica de SW', text=f"  {len(df_fsw_all)}  ", xanchor='left', showarrow=False, bgcolor="#eee", font=dict(size=14, weight='bold'))
 
-    return tarjetas, fig_sankey, mini_cards, fig_barras
+    # --- LÓGICA DINÁMICA: VOLUMEN POR AÑO ---
+    vol_2024 = dff['Frecuencia 2024'].sum()
+    vol_2025 = dff['TOTAL ANUAL 2025'].sum()
+    vol_2026 = dff['TOTAL ANUAL 2026'].sum()
+    
+    info_años = [
+        {'año': '2024', 'valor': vol_2024, 'color': '#8ca39f'},
+        {'año': '2025', 'valor': vol_2025, 'color': '#1a4e44'},
+        {'año': '2026', 'valor': vol_2026, 'color': '#5a122e'}
+    ]
+    
+    cards_uso_año = []
+    for info in info_años:
+        cards_uso_año.append(html.Div(style={
+            'display': 'flex', 'backgroundColor': 'white', 'borderRadius': '12px', 'overflow': 'hidden',
+            'border': '1px solid #eee', 'minWidth': '280px', 'boxShadow': '0 4px 6px rgba(0,0,0,0.05)'
+        }, children=[
+            html.Div(info['año'], style={
+                'backgroundColor': info['color'], 'color': 'white', 'padding': '20px', 
+                'fontSize': '24px', 'fontWeight': 'bold', 'display': 'flex', 'alignItems': 'center'
+            }),
+            html.Div(style={'padding': '10px 15px'}, children=[
+                html.P("Volumen de uso anual", style={'margin': '0', 'fontSize': '11px', 'color': '#666'}),
+                html.H4(format_number(info['valor']), style={'margin': '5px 0', 'fontSize': '18px', 'color': '#333'})
+            ])
+        ]))
+
+    meses_nombres = ['TOTAL RECIBIDOS EN EL MES_Enero', 'TOTAL RECIBIDOS EN EL MES_Febrero', 'TOTAL RECIBIDOS EN EL MES_Marzo', 'TOTAL RECIBIDOS EN EL MES_Abril', 'TOTAL RECIBIDOS EN EL MES_Mayo', 'TOTAL RECIBIDOS EN EL MES_Junio', 
+                     'TOTAL RECIBIDOS EN EL MES_Julio', 'TOTAL RECIBIDOS EN EL MES_Agosto', 'TOTAL RECIBIDOS EN EL MES_Septiembre', 'TOTAL RECIBIDOS EN EL MES_Octubre', 'TOTAL RECIBIDOS EN EL MES_Noviembre', 'TOTAL RECIBIDOS EN EL MES_Diciembre']
+    meses_labels = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+    
+    fig_lineas = go.Figure()
+    for info in info_años:
+        año = info['año']
+        
+        # CAMBIO CLAVE: Usamos None en lugar de 0 si la columna no existe o está vacía
+        y_vals = []
+        for m in meses_nombres:
+            col_name = f"{m} {año}"
+            if col_name in dff.columns:
+                suma = dff[col_name].sum()
+                # Si la suma es 0 o NaN, podrías decidir si poner None
+                y_vals.append(suma if suma != 0 else None)
+            else:
+                y_vals.append(None)
+        
+        fig_lineas.add_trace(go.Scatter(
+            x=meses_labels, 
+            y=y_vals, 
+            mode='lines+markers', 
+            name=año,
+            connectgaps=False, # Esto asegura que no se una el último dato con el siguiente si hay huecos
+            line=dict(color=info['color'], width=3), 
+            marker=dict(size=8),
+            hovertemplate=f"Año {año}<br>%{{x}}: %{{y:,.0f}}<extra></extra>"
+        ))
+
+    fig_lineas.update_layout(
+        plot_bgcolor='white', height=450, margin=dict(l=60, r=40, t=20, b=50),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+        xaxis=dict(showgrid=False, linecolor='#eee'),
+        yaxis=dict(title="Total de Actos", gridcolor='#f0f0f0', zeroline=False)
+    )
+
+    return tarjetas, fig_sankey, mini_cards, fig_barras, cards_uso_año, fig_lineas
 
 if __name__ == '__main__':
     app.run_server(debug=True)
