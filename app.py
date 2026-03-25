@@ -1,10 +1,20 @@
 import dash
-from dash import dcc, html, Input, Output
+from dash import dcc, html, Input, Output, State, dash_table
 import pandas as pd
 import plotly.graph_objects as go
+import plotly.express as px
+import io
 
 # --- 1. CONFIGURACIÓN DE DATOS ---
 df_seguimiento = pd.read_pickle('datos_tablero.pkl')
+
+# Columnas para la tabla
+dff_columnas_mapping = [
+    "Sector", "Dependencia", "Homoclave", "Nombre del trámite", 
+    "Tipo trámite agrupado", "Solución tecnológica", "Responsable digitalización", 
+    "Frecuencia 2024", "tramite_digitalizados_actualizado_2026", 
+    "tramite_digitalizados_atdt", "tramite_e2e_actualizado_2026"
+]
 
 app = dash.Dash(__name__)
 server = app.server
@@ -90,7 +100,7 @@ app.layout = html.Div(style={'backgroundColor': '#fcfcfc', 'padding': '40px', 'f
         dcc.Graph(id='barras-responsables', config={'displayModeBar': False})
     ]),
 
-    # --- NUEVA SECCIÓN: VOLUMEN DE USO POR AÑO (Agregada al final) ---
+    # SECCIÓN: VOLUMEN DE USO POR AÑO
     html.Div(style={'maxWidth': '1350px', 'margin': '40px auto', 'backgroundColor': 'white', 'padding': '25px', 'borderRadius': '12px', 'boxShadow': '0 2px 10px rgba(0,0,0,0.05)'}, children=[
         html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'flex-start', 'marginBottom': '20px'}, children=[
             html.Div([
@@ -106,22 +116,84 @@ app.layout = html.Div(style={'backgroundColor': '#fcfcfc', 'padding': '40px', 'f
         ]),
         html.Div(id='cards-años-uso', style={'display': 'flex', 'justifyContent': 'center', 'gap': '20px', 'marginBottom': '30px'}),
         dcc.Graph(id='grafica-uso-lineas', config={'displayModeBar': False})
+    ]),
+
+    # SECCIÓN: DISTRIBUCIÓN DE TRÁMITES POR SECTOR (TREEMAP)
+    html.Div(style={'maxWidth': '1350px', 'margin': '40px auto', 'backgroundColor': 'white', 'padding': '25px', 'borderRadius': '12px', 'boxShadow': '0 2px 10px rgba(0,0,0,0.05)'}, children=[
+        html.Div(style={'marginBottom': '20px'}, children=[
+            html.H2("Distribución de trámites por sector", style={'color': '#000', 'fontSize': '28px', 'margin': '0', 'fontWeight': 'bold'}),
+            html.P("Comparativa por cantidad de trámites", style={'color': '#444', 'fontSize': '18px', 'margin': '5px 0'}),
+            html.P("Actualización: Marzo 2026", style={'color': '#999', 'fontSize': '14px', 'fontStyle': 'italic'}),
+        ]),
+        dcc.Graph(id='treemap-sectores', config={'displayModeBar': False})
+    ]),
+
+    # --- SECCIÓN: TABLA DETALLADA ---
+    html.Div(style={'maxWidth': '1350px', 'margin': '40px auto', 'backgroundColor': 'white', 'padding': '25px', 'borderRadius': '12px', 'boxShadow': '0 2px 10px rgba(0,0,0,0.05)'}, children=[
+        html.H2("Detalle de Trámites", style={'color': '#000', 'fontSize': '28px', 'margin': '0 0 20px 0', 'fontWeight': 'bold'}),
+        
+        html.Div(style={'display': 'flex', 'alignItems': 'flex-end', 'gap': '20px', 'marginBottom': '25px'}, children=[
+            html.Div([
+                html.Label("Busca por homoclave", style={'fontWeight': 'bold', 'fontSize': '13px'}),
+                dcc.Input(id='input-homoclave', type='text', placeholder="Ingresa homoclave", style={'width': '250px', 'padding': '8px', 'marginTop': '5px'})
+            ]),
+            html.Div([
+                html.Label("Estatus de digitalización", style={'fontWeight': 'bold', 'fontSize': '13px'}),
+                dcc.Dropdown(id='table-filter-estatus', options=[{'label': i, 'value': i} for i in sorted(df_seguimiento['tramite_digitalizados_actualizado_2026'].unique())], placeholder="Seleccionar", style={'width': '250px', 'marginTop': '5px'})
+            ]),
+            html.Button("Buscar", id='btn-buscar', n_clicks=0, style={'backgroundColor': '#1a4e44', 'color': 'white', 'padding': '10px 25px', 'border': 'none', 'borderRadius': '4px', 'cursor': 'pointer'}),
+            html.Button("Exportar datos", id='btn-exportar', n_clicks=0, style={'backgroundColor': 'white', 'border': '1px solid #1a4e44', 'color': '#1a4e44', 'padding': '10px 20px', 'borderRadius': '4px', 'cursor': 'pointer'}),
+            dcc.Download(id="download-dataframe-excel"),
+            html.Div(id='card-conteo-tramites', style={'marginLeft': 'auto', 'padding': '10px', 'backgroundColor': '#f0f4f3', 'borderRadius': '6px', 'borderLeft': '5px solid #1a4e44'})
+        ]),
+
+        dash_table.DataTable(
+            id='tabla-tramites',
+            sort_action="native",
+            columns=[{"name": i, "id": i} for i in dff_columnas_mapping],
+            page_size=20,
+            style_table={'height': '500px', 'overflowY': 'auto'},
+            style_header={'backgroundColor': '#1a3e35', 'color': 'white', 'fontWeight': 'bold'},
+            style_cell={'textAlign': 'left', 'padding': '12px', 'minWidth': '180px', 'whiteSpace': 'normal'}
+        )
     ])
 ])
 
-# --- 4. CALLBACK ---
+# --- 4. CALLBACKS ---
+
+# Callback para exportar Excel
+@app.callback(
+    Output("download-dataframe-excel", "data"),
+    Input("btn-exportar", "n_clicks"),
+    State("tabla-tramites", "data"),
+    prevent_initial_call=True
+)
+def export_excel(n_clicks, table_data):
+    if not table_data: return dash.no_update
+    df_export = pd.DataFrame(table_data)
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        df_export.to_excel(writer, index=False, sheet_name='Trámites')
+    return dcc.send_bytes(output.getvalue(), "Detalle_Tramites.xlsx")
+
 @app.callback(
     [Output('kpi-row', 'children'),
      Output('sankey-principal', 'figure'),
      Output('mini-cards-soluciones', 'children'),
      Output('barras-responsables', 'figure'),
      Output('cards-años-uso', 'children'),
-     Output('grafica-uso-lineas', 'figure')],
+     Output('grafica-uso-lineas', 'figure'),
+     Output('treemap-sectores', 'figure'),
+     Output('tabla-tramites', 'data'),
+     Output('card-conteo-tramites', 'children')],
     [Input('filter-Sector', 'value'),
-     Input('filter-Dependencia', 'value')]
+     Input('filter-Dependencia', 'value'),
+     Input('btn-buscar', 'n_clicks')],
+    [State('input-homoclave', 'value'),
+     State('table-filter-estatus', 'value')]
 )
-def update_dashboard(sector, dependencia):
-    if df_seguimiento.empty: return [], go.Figure(), [], go.Figure(), [], go.Figure()
+def update_dashboard(sector, dependencia, n_clicks, homoclave, estatus):
+    if df_seguimiento.empty: return [], go.Figure(), [], go.Figure(), [], go.Figure(), go.Figure(), [], ""
 
     dff = df_seguimiento.copy()
     if sector: dff = dff[dff['Sector'].isin(sector)]
@@ -180,7 +252,7 @@ def update_dashboard(sector, dependencia):
             dict(x=1, y=1.15, showarrow=False, text="<b>Tipo de trámite</b><br>Digitalizado", xanchor='right', font=dict(size=12, color="#444"))
         ])
 
-    # --- LÓGICA GRÁFICA DE RESPONSABLES ---
+    # --- LÓGICA GRÁFICA DE RESPONSABLES ORIGINAL ---
     config_soluciones = [
         {'label': 'Actualización a Sistema (Dependencia)', 'color': '#8cb54a', 'key': 'Dependencia'},
         {'label': 'Actualización a Sistema (FSW)', 'color': '#1a7a6a', 'key': 'FSW'},
@@ -230,7 +302,7 @@ def update_dashboard(sector, dependencia):
     fig_barras.add_annotation(x=len(df_dep_all), y='Dependencia', text=f"  {len(df_dep_all)}  ", xanchor='left', showarrow=False, bgcolor="#eee", font=dict(size=14, weight='bold'))
     fig_barras.add_annotation(x=len(df_fsw_all), y='Fábrica de SW', text=f"  {len(df_fsw_all)}  ", xanchor='left', showarrow=False, bgcolor="#eee", font=dict(size=14, weight='bold'))
 
-    # --- LÓGICA DINÁMICA: VOLUMEN POR AÑO ---
+    # --- LÓGICA DINÁMICA: VOLUMEN POR AÑO ORIGINAL ---
     vol_2024 = dff['Frecuencia 2024'].sum()
     vol_2025 = dff['TOTAL ANUAL 2025'].sum()
     vol_2026 = dff['TOTAL ANUAL 2026'].sum()
@@ -264,26 +336,18 @@ def update_dashboard(sector, dependencia):
     fig_lineas = go.Figure()
     for info in info_años:
         año = info['año']
-        
-        # CAMBIO CLAVE: Usamos None en lugar de 0 si la columna no existe o está vacía
         y_vals = []
         for m in meses_nombres:
             col_name = f"{m} {año}"
             if col_name in dff.columns:
                 suma = dff[col_name].sum()
-                # Si la suma es 0 o NaN, podrías decidir si poner None
                 y_vals.append(suma if suma != 0 else None)
             else:
                 y_vals.append(None)
         
         fig_lineas.add_trace(go.Scatter(
-            x=meses_labels, 
-            y=y_vals, 
-            mode='lines+markers', 
-            name=año,
-            connectgaps=False, # Esto asegura que no se una el último dato con el siguiente si hay huecos
-            line=dict(color=info['color'], width=3), 
-            marker=dict(size=8),
+            x=meses_labels, y=y_vals, mode='lines+markers', name=año,
+            connectgaps=False, line=dict(color=info['color'], width=3), marker=dict(size=8),
             hovertemplate=f"Año {año}<br>%{{x}}: %{{y:,.0f}}<extra></extra>"
         ))
 
@@ -294,7 +358,34 @@ def update_dashboard(sector, dependencia):
         yaxis=dict(title="Total de Actos", gridcolor='#f0f0f0', zeroline=False)
     )
 
-    return tarjetas, fig_sankey, mini_cards, fig_barras, cards_uso_año, fig_lineas
+    # --- LÓGICA TREEMAP ORIGINAL ---
+    df_tree = dff.groupby('Sector').agg({'Sector': 'count', 'Frecuencia 2024': 'sum'}).rename(columns={'Sector': 'count'}).reset_index()
+    fig_tree = px.treemap(
+        df_tree, path=[px.Constant("Distribución"), 'Sector'], values='count', color='count',
+        color_continuous_scale=['#b2c4c9', '#3b6e63', '#1a3e35'],
+    )
+    fig_tree.update_traces(
+        textinfo="label+value+percent parent",
+        texttemplate="<b>%{label}</b><br>%{value}<br>%{percentParent:.1%}",
+        hovertemplate="<b>%{label}</b><br>Cantidad: %{value}<br>Volumen de uso: %{customdata[0]:,}<extra></extra>",
+        customdata=df_tree[['Frecuencia 2024']],
+        marker=dict(line=dict(width=1, color='white'))
+    )
+    fig_tree.update_layout(margin=dict(t=0, l=0, r=0, b=0), height=500, coloraxis_showscale=False)
+
+    # --- LÓGICA DINÁMICA DE LA TABLA ---
+    dff_tabla = dff.copy()
+    if homoclave:
+        dff_tabla = dff_tabla[dff_tabla['Homoclave'].str.contains(homoclave, case=False, na=False)]
+    if estatus:
+        dff_tabla = dff_tabla[dff_tabla['tramite_digitalizados_actualizado_2026'] == estatus]
+
+    conteo_texto = html.Div([
+        html.P("Resultados encontrados:", style={'margin': '0', 'fontSize': '12px'}),
+        html.H4(f"{len(dff_tabla)} trámites", style={'margin': '0', 'color': '#1a4e44'})
+    ])
+
+    return tarjetas, fig_sankey, mini_cards, fig_barras, cards_uso_año, fig_lineas, fig_tree, dff_tabla.to_dict('records'), conteo_texto
 
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run(debug=True)
