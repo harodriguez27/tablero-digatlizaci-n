@@ -388,4 +388,4 @@ def update_dashboard(sector, dependencia, n_clicks, homoclave, estatus):
     return tarjetas, fig_sankey, mini_cards, fig_barras, cards_uso_año, fig_lineas, fig_tree, dff_tabla.to_dict('records'), conteo_texto
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run_server(debug=True)
