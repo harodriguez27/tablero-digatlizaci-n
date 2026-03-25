@@ -56,8 +56,8 @@ app.layout = html.Div(style={'backgroundColor': '#fcfcfc', 'padding': '40px', 'f
     html.H1("DIGITALIZACIÓN DE TRÁMITES", style={'textAlign': 'center', 'color': '#1a3e35', 'fontWeight': '900', 'letterSpacing': '1px', 'marginBottom': '5px'}),
     html.P("Datos al 22 de marzo de 2026", style={'textAlign': 'center', 'color': '#666', 'marginBottom': '30px'}),
 
-    # SELECTORES
-    html.Div(style={'display': 'flex', 'gap': '30px', 'marginBottom': '30px', 'maxWidth': '1200px', 'margin': '0 auto 30px auto'}, children=[
+    # SELECTORES (CON BOTÓN DE LIMPIAR AGREGADO)
+    html.Div(style={'display': 'flex', 'gap': '30px', 'marginBottom': '30px', 'maxWidth': '1200px', 'margin': '0 auto 30px auto', 'alignItems': 'flex-end'}, children=[
         html.Div([
             html.Label("Selecciona un sector", style={'fontWeight': 'bold', 'fontSize': '12px', 'color': '#444'}),
             dcc.Dropdown(id='filter-Sector', options=[{'label': i, 'value': i} for i in sorted(df_seguimiento['Sector'].unique())] if not df_seguimiento.empty else [], multi=True, placeholder="Seleccionar")
@@ -65,7 +65,10 @@ app.layout = html.Div(style={'backgroundColor': '#fcfcfc', 'padding': '40px', 'f
         html.Div([
             html.Label("Selecciona una dependencia", style={'fontWeight': 'bold', 'fontSize': '12px', 'color': '#444'}),
             dcc.Dropdown(id='filter-Dependencia', options=[{'label': i, 'value': i} for i in sorted(df_seguimiento['Dependencia'].unique())] if not df_seguimiento.empty else [], multi=True, placeholder="Seleccionar")
-        ], style={'flex': '1'})
+        ], style={'flex': '1'}),
+        html.Button("Limpiar Filtros", id='btn-limpiar', n_clicks=0, style={
+            'backgroundColor': '#fcfcfc', 'border': '1px solid #1a3e35', 'color': '#1a3e35', 'padding': '8px 15px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'
+        })
     ]),
 
     # FILA DE TARJETAS (KPIs)
@@ -79,9 +82,9 @@ app.layout = html.Div(style={'backgroundColor': '#fcfcfc', 'padding': '40px', 'f
                 html.P("Periodo: Enero - Marzo 2026", style={'color': '#999', 'fontSize': '14px', 'margin': '5px 0 0 0'}),
             ]),
             html.Div(style={'textAlign': 'right', 'fontSize': '12px', 'color': '#666'}, children=[
-                html.Span("Dependencia: "), html.Strong("Todas", style={'backgroundColor': '#8fa19e', 'color': 'white', 'padding': '2px 10px', 'borderRadius': '10px'}),
+                html.Span("Dependencia: "), html.Strong("Todas", id='txt-dep-sankey', style={'backgroundColor': '#8fa19e', 'color': 'white', 'padding': '2px 10px', 'borderRadius': '10px'}),
                 html.Br(),
-                html.Span("Sector: ", style={'marginTop': '5px', 'display': 'inline-block'}), html.Strong("Todos", style={'backgroundColor': '#8fa19e', 'color': 'white', 'padding': '2px 10px', 'borderRadius': '10px'}),
+                html.Span("Sector: ", style={'marginTop': '5px', 'display': 'inline-block'}), html.Strong("Todos", id='txt-sec-sankey', style={'backgroundColor': '#8fa19e', 'color': 'white', 'padding': '2px 10px', 'borderRadius': '10px'}),
             ])
         ]),
         dcc.Graph(id='sankey-principal', config={'displayModeBar': False})
@@ -92,8 +95,8 @@ app.layout = html.Div(style={'backgroundColor': '#fcfcfc', 'padding': '40px', 'f
         html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'center', 'marginBottom': '20px'}, children=[
             html.H2("Solución tecnológica por responsable", style={'color': '#1a3e35', 'fontSize': '24px', 'margin': '0', 'fontWeight': 'bold'}),
             html.Div(style={'fontSize': '12px'}, children=[
-                html.Span("Sector: "), html.Strong("Todas", style={'backgroundColor': '#1a3e35', 'color': 'white', 'padding': '2px 10px', 'borderRadius': '10px', 'marginRight': '10px'}),
-                html.Span("Dependencias: "), html.Strong("Todas", style={'backgroundColor': '#1a3e35', 'color': 'white', 'padding': '2px 10px', 'borderRadius': '10px'})
+                html.Span("Sector: "), html.Strong("Todas", id='txt-sec-resp', style={'backgroundColor': '#1a3e35', 'color': 'white', 'padding': '2px 10px', 'borderRadius': '10px', 'marginRight': '10px'}),
+                html.Span("Dependencias: "), html.Strong("Todas", id='txt-dep-resp', style={'backgroundColor': '#1a3e35', 'color': 'white', 'padding': '2px 10px', 'borderRadius': '10px'})
             ])
         ]),
         html.Div(id='mini-cards-soluciones', style={'display': 'flex', 'justifyContent': 'space-between', 'gap': '10px', 'marginBottom': '20px'}),
@@ -109,9 +112,9 @@ app.layout = html.Div(style={'backgroundColor': '#fcfcfc', 'padding': '40px', 'f
                 html.P("Actualización: Marzo 2026", style={'color': '#999', 'fontSize': '14px', 'fontStyle': 'italic'}),
             ]),
             html.Div(style={'textAlign': 'right', 'fontSize': '13px', 'color': '#666'}, children=[
-                html.Span("Dependencias: "), html.Strong("Todas", style={'backgroundColor': '#7a8c89', 'color': 'white', 'padding': '4px 12px', 'borderRadius': '15px'}),
+                html.Span("Dependencias: "), html.Strong("Todas", id='txt-dep-vol', style={'backgroundColor': '#7a8c89', 'color': 'white', 'padding': '4px 12px', 'borderRadius': '15px'}),
                 html.Br(),
-                html.Span("Sector: ", style={'marginTop': '10px', 'display': 'inline-block'}), html.Strong("Todos", style={'backgroundColor': '#7a8c89', 'color': 'white', 'padding': '4px 12px', 'borderRadius': '15px'}),
+                html.Span("Sector: ", style={'marginTop': '10px', 'display': 'inline-block'}), html.Strong("Todos", id='txt-sec-vol', style={'backgroundColor': '#7a8c89', 'color': 'white', 'padding': '4px 12px', 'borderRadius': '15px'}),
             ])
         ]),
         html.Div(id='cards-años-uso', style={'display': 'flex', 'justifyContent': 'center', 'gap': '20px', 'marginBottom': '30px'}),
@@ -161,6 +164,42 @@ app.layout = html.Div(style={'backgroundColor': '#fcfcfc', 'padding': '40px', 'f
 
 # --- 4. CALLBACKS ---
 
+# CALLBACK NUEVO 1: FILTROS EN CASCADA
+@app.callback(
+    [Output('filter-Sector', 'options'),
+     Output('filter-Dependencia', 'options')],
+    [Input('filter-Sector', 'value'),
+     Input('filter-Dependencia', 'value')]
+)
+def update_filter_options(sel_sector, sel_dep):
+    dff = df_seguimiento.copy()
+    if sel_sector:
+        dff = dff[dff['Sector'].isin(sel_sector)]
+        dep_options = [{'label': i, 'value': i} for i in sorted(dff['Dependencia'].unique())]
+    else:
+        dep_options = [{'label': i, 'value': i} for i in sorted(df_seguimiento['Dependencia'].unique())]
+        
+    dff = df_seguimiento.copy()
+    if sel_dep:
+        dff = dff[dff['Dependencia'].isin(sel_dep)]
+        sec_options = [{'label': i, 'value': i} for i in sorted(dff['Sector'].unique())]
+    else:
+        sec_options = [{'label': i, 'value': i} for i in sorted(df_seguimiento['Sector'].unique())]
+        
+    return sec_options, dep_options
+
+# CALLBACK NUEVO 2: LIMPIAR FILTROS
+@app.callback(
+    [Output('filter-Sector', 'value'),
+     Output('filter-Dependencia', 'value'),
+     Output('input-homoclave', 'value'),
+     Output('table-filter-estatus', 'value')],
+    [Input('btn-limpiar', 'n_clicks')],
+    prevent_initial_call=True
+)
+def clear_all_filters(n):
+    return None, None, "", None
+
 # Callback para exportar Excel
 @app.callback(
     Output("download-dataframe-excel", "data"),
@@ -185,7 +224,11 @@ def export_excel(n_clicks, table_data):
      Output('grafica-uso-lineas', 'figure'),
      Output('treemap-sectores', 'figure'),
      Output('tabla-tramites', 'data'),
-     Output('card-conteo-tramites', 'children')],
+     Output('card-conteo-tramites', 'children'),
+     # Actualización de etiquetas de texto dinámicas
+     Output('txt-dep-sankey', 'children'), Output('txt-sec-sankey', 'children'),
+     Output('txt-dep-resp', 'children'), Output('txt-sec-resp', 'children'),
+     Output('txt-dep-vol', 'children'), Output('txt-sec-vol', 'children')],
     [Input('filter-Sector', 'value'),
      Input('filter-Dependencia', 'value'),
      Input('btn-buscar', 'n_clicks')],
@@ -193,7 +236,8 @@ def export_excel(n_clicks, table_data):
      State('table-filter-estatus', 'value')]
 )
 def update_dashboard(sector, dependencia, n_clicks, homoclave, estatus):
-    if df_seguimiento.empty: return [], go.Figure(), [], go.Figure(), [], go.Figure(), go.Figure(), [], ""
+    if df_seguimiento.empty: 
+        return [], go.Figure(), [], go.Figure(), [], go.Figure(), go.Figure(), [], "", "Todas", "Todos", "Todas", "Todas", "Todas", "Todos"
 
     dff = df_seguimiento.copy()
     if sector: dff = dff[dff['Sector'].isin(sector)]
@@ -264,7 +308,6 @@ def update_dashboard(sector, dependencia, n_clicks, homoclave, estatus):
 
     mini_cards = []
     fig_barras = go.Figure()
-
     df_fsw_all = dff[dff['Solución tecnológica'].str.contains('FSW|Beca|Motor', case=False, na=False)]
     df_dep_all = dff[dff['Solución tecnológica'].str.contains('Dependencia', case=False, na=False)]
 
@@ -385,7 +428,13 @@ def update_dashboard(sector, dependencia, n_clicks, homoclave, estatus):
         html.H4(f"{len(dff_tabla)} trámites", style={'margin': '0', 'color': '#1a4e44'})
     ])
 
-    return tarjetas, fig_sankey, mini_cards, fig_barras, cards_uso_año, fig_lineas, fig_tree, dff_tabla.to_dict('records'), conteo_texto
+    # Textos dinámicos para las etiquetas
+    txt_sec = sector[0] if (sector and len(sector)==1) else "Múltiples" if (sector and len(sector)>1) else "Todos"
+    txt_dep = dependencia[0] if (dependencia and len(dependencia)==1) else "Múltiples" if (dependencia and len(dependencia)>1) else "Todas"
+
+    return (tarjetas, fig_sankey, mini_cards, fig_barras, cards_uso_año, fig_lineas, fig_tree, 
+            dff_tabla.to_dict('records'), conteo_texto, 
+            txt_dep, txt_sec, txt_sec, txt_dep, txt_dep, txt_sec)
 
 if __name__ == '__main__':
     app.run_server(debug=True)
