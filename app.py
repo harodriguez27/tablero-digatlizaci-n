@@ -1,12 +1,20 @@
 import dash
-from dash import dcc, html, Input, Output, State, dash_table
+from dash import dcc, html, Input, Output, State, dash_table, callback_context, no_update
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
 import io
-
+from datetime import datetime
 # --- 1. CONFIGURACIÓN DE DATOS ---
 df_seguimiento = pd.read_pickle('datos_tablero.pkl')
+
+# --- CONFIGURACIÓN DE FECHA ACTUAL ---
+meses = [
+    "enero", "febrero", "marzo", "abril", "mayo", "junio",
+    "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"
+]
+ahora = datetime.now()
+fecha_hoy = f"{ahora.day} de {meses[ahora.month - 1]} de {ahora.year}"
 
 # Columnas para la tabla
 dff_columnas_mapping = [
@@ -54,7 +62,7 @@ def crear_tarjeta_indicador(titulo, total_principal, sub_items):
 app.layout = html.Div(style={'backgroundColor': '#fcfcfc', 'padding': '40px', 'fontFamily': 'Arial, sans-serif'}, children=[
     
     html.H1("DIGITALIZACIÓN DE TRÁMITES", style={'textAlign': 'center', 'color': '#1a3e35', 'fontWeight': '900', 'letterSpacing': '1px', 'marginBottom': '5px'}),
-    html.P("Datos al 22 de marzo de 2026", style={'textAlign': 'center', 'color': '#666', 'marginBottom': '30px'}),
+    html.P(f"Datos al {fecha_hoy}", style={'textAlign': 'center', 'color': '#666', 'marginBottom': '30px'}),
 
     # SELECTORES (CON BOTÓN DE LIMPIAR AGREGADO)
     html.Div(style={'display': 'flex', 'gap': '30px', 'marginBottom': '30px', 'maxWidth': '1200px', 'margin': '0 auto 30px auto', 'alignItems': 'flex-end'}, children=[
@@ -65,6 +73,14 @@ app.layout = html.Div(style={'backgroundColor': '#fcfcfc', 'padding': '40px', 'f
         html.Div([
             html.Label("Selecciona una dependencia", style={'fontWeight': 'bold', 'fontSize': '12px', 'color': '#444'}),
             dcc.Dropdown(id='filter-Dependencia', options=[{'label': i, 'value': i} for i in sorted(df_seguimiento['Dependencia'].unique())] if not df_seguimiento.empty else [], multi=True, placeholder="Seleccionar")
+        ], style={'flex': '1'}),
+        html.Div([
+            html.Label("Selecciona si está digitalizado", style={'fontWeight': 'bold', 'fontSize': '12px', 'color': '#444'}),
+            dcc.Dropdown(id='filter-Digitalizado', options=[{'label': i, 'value': i} for i in sorted(df_seguimiento['tramite_digitalizados_actualizado_2026'].unique())] if not df_seguimiento.empty else [], multi=True, placeholder="Seleccionar")
+        ], style={'flex': '1'}),
+        html.Div([
+            html.Label("Selecciona si está digitalizado por la ATDT", style={'fontWeight': 'bold', 'fontSize': '12px', 'color': '#444'}),
+            dcc.Dropdown(id='filter-ATDT', options=[{'label': i, 'value': i} for i in sorted(df_seguimiento['tramite_digitalizados_atdt'].unique())] if not df_seguimiento.empty else [], multi=True, placeholder="Seleccionar")
         ], style={'flex': '1'}),
         html.Button("Limpiar Filtros", id='btn-limpiar', n_clicks=0, style={
             'backgroundColor': '#fcfcfc', 'border': '1px solid #1a3e35', 'color': '#1a3e35', 'padding': '8px 15px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'
@@ -79,7 +95,7 @@ app.layout = html.Div(style={'backgroundColor': '#fcfcfc', 'padding': '40px', 'f
         html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'flex-end', 'marginBottom': '10px'}, children=[
             html.Div([
                 html.H2("Digitalización de trámites federales", style={'color': '#000', 'fontSize': '24px', 'margin': '0'}),
-                html.P("Periodo: Enero - Marzo 2026", style={'color': '#999', 'fontSize': '14px', 'margin': '5px 0 0 0'}),
+                html.P("Periodo: Enero 2025 - Abril 2026", style={'color': '#999', 'fontSize': '14px', 'margin': '5px 0 0 0'}),
             ]),
             html.Div(style={'textAlign': 'right', 'fontSize': '12px', 'color': '#666'}, children=[
                 html.Span("Dependencia: "), html.Strong("Todas", id='txt-dep-sankey', style={'backgroundColor': '#8fa19e', 'color': 'white', 'padding': '2px 10px', 'borderRadius': '10px'}),
@@ -109,7 +125,7 @@ app.layout = html.Div(style={'backgroundColor': '#fcfcfc', 'padding': '40px', 'f
             html.Div([
                 html.H2("Volumen de uso por año", style={'color': '#000', 'fontSize': '28px', 'margin': '0', 'fontWeight': 'bold'}),
                 html.P("Actos por año", style={'color': '#444', 'fontSize': '18px', 'margin': '5px 0'}),
-                html.P("Actualización: Marzo 2026", style={'color': '#999', 'fontSize': '14px', 'fontStyle': 'italic'}),
+                html.P("Actualización: Abril 2026", style={'color': '#999', 'fontSize': '14px', 'fontStyle': 'italic'}),
             ]),
             html.Div(style={'textAlign': 'right', 'fontSize': '13px', 'color': '#666'}, children=[
                 html.Span("Dependencias: "), html.Strong("Todas", id='txt-dep-vol', style={'backgroundColor': '#7a8c89', 'color': 'white', 'padding': '4px 12px', 'borderRadius': '15px'}),
@@ -126,7 +142,7 @@ app.layout = html.Div(style={'backgroundColor': '#fcfcfc', 'padding': '40px', 'f
         html.Div(style={'marginBottom': '20px'}, children=[
             html.H2("Distribución de trámites por sector", style={'color': '#000', 'fontSize': '28px', 'margin': '0', 'fontWeight': 'bold'}),
             html.P("Comparativa por cantidad de trámites", style={'color': '#444', 'fontSize': '18px', 'margin': '5px 0'}),
-            html.P("Actualización: Marzo 2026", style={'color': '#999', 'fontSize': '14px', 'fontStyle': 'italic'}),
+            html.P("Actualización: Abril 2026", style={'color': '#999', 'fontSize': '14px', 'fontStyle': 'italic'}),
         ]),
         dcc.Graph(id='treemap-sectores', config={'displayModeBar': False})
     ]),
@@ -163,44 +179,68 @@ app.layout = html.Div(style={'backgroundColor': '#fcfcfc', 'padding': '40px', 'f
 ])
 
 # --- 4. CALLBACKS ---
-
-# CALLBACK NUEVO 1: FILTROS EN CASCADA
+# CALLBACK 1: FILTROS EN CASCADA
 @app.callback(
     [Output('filter-Sector', 'options'),
-     Output('filter-Dependencia', 'options')],
+     Output('filter-Dependencia', 'options'),
+     Output('filter-Digitalizado', 'options'),
+     Output('filter-ATDT', 'options')],
     [Input('filter-Sector', 'value'),
-     Input('filter-Dependencia', 'value')]
+     Input('filter-Dependencia', 'value'),
+     Input('filter-Digitalizado', 'value'),
+     Input('filter-ATDT', 'value')]
 )
-def update_filter_options(sel_sector, sel_dep):
-    dff = df_seguimiento.copy()
-    if sel_sector:
-        dff = dff[dff['Sector'].isin(sel_sector)]
-        dep_options = [{'label': i, 'value': i} for i in sorted(dff['Dependencia'].unique())]
-    else:
-        dep_options = [{'label': i, 'value': i} for i in sorted(df_seguimiento['Dependencia'].unique())]
-        
-    dff = df_seguimiento.copy()
-    if sel_dep:
-        dff = dff[dff['Dependencia'].isin(sel_dep)]
-        sec_options = [{'label': i, 'value': i} for i in sorted(dff['Sector'].unique())]
-    else:
-        sec_options = [{'label': i, 'value': i} for i in sorted(df_seguimiento['Sector'].unique())]
-        
-    return sec_options, dep_options
+def update_filter_options(sel_sector, sel_dep, sel_dig, sel_atdt):
+    ctx = callback_context
+    if not ctx.triggered:
+        def get_all(col):
+            return [{'label': str(i), 'value': i} for i in sorted(df_seguimiento[col].unique())]
+        return get_all('Sector'), get_all('Dependencia'), get_all('tramite_digitalizados_actualizado_2026'), get_all('tramite_digitalizados_atdt')
 
-# CALLBACK NUEVO 2: LIMPIAR FILTROS
+    def get_opts(df, col):
+        return [{'label': str(i), 'value': i} for i in sorted(df[col].unique())]
+
+    # Sector
+    df_sec = df_seguimiento.copy()
+    if sel_dep:  df_sec = df_sec[df_sec['Dependencia'].isin(sel_dep)]
+    if sel_dig:  df_sec = df_sec[df_sec['tramite_digitalizados_actualizado_2026'].isin(sel_dig)]
+    if sel_atdt: df_sec = df_sec[df_sec['tramite_digitalizados_atdt'].isin(sel_atdt)]
+    
+    # Dependencia
+    df_dep = df_seguimiento.copy()
+    if sel_sector: df_dep = df_dep[df_dep['Sector'].isin(sel_sector)]
+    if sel_dig:    df_dep = df_dep[df_dep['tramite_digitalizados_actualizado_2026'].isin(sel_dig)]
+    if sel_atdt:   df_dep = df_dep[df_dep['tramite_digitalizados_atdt'].isin(sel_atdt)]
+    
+    # Digitalizado
+    df_dig_opts = df_seguimiento.copy()
+    if sel_sector: df_dig_opts = df_dig_opts[df_dig_opts['Sector'].isin(sel_sector)]
+    if sel_dep:    df_dig_opts = df_dig_opts[df_dig_opts['Dependencia'].isin(sel_dep)]
+    if sel_atdt:   df_dig_opts = df_dig_opts[df_dig_opts['tramite_digitalizados_atdt'].isin(sel_atdt)]
+
+    # ATDT
+    df_atdt_opts = df_seguimiento.copy()
+    if sel_sector: df_atdt_opts = df_atdt_opts[df_atdt_opts['Sector'].isin(sel_sector)]
+    if sel_dep:    df_atdt_opts = df_atdt_opts[df_atdt_opts['Dependencia'].isin(sel_dep)]
+    if sel_dig:    df_atdt_opts = df_atdt_opts[df_atdt_opts['tramite_digitalizados_actualizado_2026'].isin(sel_dig)]
+
+    return get_opts(df_sec, 'Sector'), get_opts(df_dep, 'Dependencia'), get_opts(df_dig_opts, 'tramite_digitalizados_actualizado_2026'), get_opts(df_atdt_opts, 'tramite_digitalizados_atdt')
+
+# CALLBACK 2: LIMPIAR FILTROS
 @app.callback(
     [Output('filter-Sector', 'value'),
      Output('filter-Dependencia', 'value'),
+     Output('filter-Digitalizado', 'value'),
+     Output('filter-ATDT', 'value'),
      Output('input-homoclave', 'value'),
      Output('table-filter-estatus', 'value')],
     [Input('btn-limpiar', 'n_clicks')],
     prevent_initial_call=True
 )
 def clear_all_filters(n):
-    return None, None, "", None
+    return None, None, None, None, "", None
 
-# Callback para exportar Excel
+# CALLBACK 3: EXPORTAR EXCEL
 @app.callback(
     Output("download-dataframe-excel", "data"),
     Input("btn-exportar", "n_clicks"),
@@ -208,13 +248,14 @@ def clear_all_filters(n):
     prevent_initial_call=True
 )
 def export_excel(n_clicks, table_data):
-    if not table_data: return dash.no_update
+    if not table_data: return no_update
     df_export = pd.DataFrame(table_data)
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df_export.to_excel(writer, index=False, sheet_name='Trámites')
     return dcc.send_bytes(output.getvalue(), "Detalle_Tramites.xlsx")
 
+# CALLBACK 4: ACTUALIZACIÓN DEL DASHBOARD (EL PRINCIPAL)
 @app.callback(
     [Output('kpi-row', 'children'),
      Output('sankey-principal', 'figure'),
@@ -225,23 +266,28 @@ def export_excel(n_clicks, table_data):
      Output('treemap-sectores', 'figure'),
      Output('tabla-tramites', 'data'),
      Output('card-conteo-tramites', 'children'),
-     # Actualización de etiquetas de texto dinámicas
      Output('txt-dep-sankey', 'children'), Output('txt-sec-sankey', 'children'),
      Output('txt-dep-resp', 'children'), Output('txt-sec-resp', 'children'),
      Output('txt-dep-vol', 'children'), Output('txt-sec-vol', 'children')],
     [Input('filter-Sector', 'value'),
      Input('filter-Dependencia', 'value'),
+     Input('filter-Digitalizado', 'value'),
+     Input('filter-ATDT', 'value'),
      Input('btn-buscar', 'n_clicks')],
     [State('input-homoclave', 'value'),
      State('table-filter-estatus', 'value')]
 )
-def update_dashboard(sector, dependencia, n_clicks, homoclave, estatus):
+def update_dashboard(sector, dependencia, digitalizado, atdt, n_clicks, homoclave, estatus):
     if df_seguimiento.empty: 
         return [], go.Figure(), [], go.Figure(), [], go.Figure(), go.Figure(), [], "", "Todas", "Todos", "Todas", "Todas", "Todas", "Todos"
 
     dff = df_seguimiento.copy()
+    
+    # --- FILTRADO POR DROPDOWNS PRINCIPALES ---
     if sector: dff = dff[dff['Sector'].isin(sector)]
     if dependencia: dff = dff[dff['Dependencia'].isin(dependencia)]
+    if digitalizado: dff = dff[dff['tramite_digitalizados_actualizado_2026'].isin(digitalizado)]
+    if atdt: dff = dff[dff['tramite_digitalizados_atdt'].isin(atdt)]
 
     # --- LÓGICA DE MÉTRICAS ORIGINAL ---
     total_tra = len(dff)
