@@ -100,7 +100,8 @@ columnas_texto = [
 
 # Aplicamos la conversión y limpieza en un bucle
 for col in columnas_texto:
-    if col in df_seguimiento.columns:df_seguimiento[col] = (df_seguimiento[col].astype(str).replace(['nan', 'None', 'NaN', ''], 'Sin dato').str.strip())
+    if col in df_seguimiento.columns:
+        df_seguimiento[col] = df_seguimiento[col].fillna('Sin dato').astype(str).str.strip()
 
 # --- CONFIGURACIÓN DE FECHA ACTUAL ---
 meses = [
