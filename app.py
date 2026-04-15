@@ -45,63 +45,71 @@ LEFT JOIN catalogos ced
 LEFT JOIN catalogos st 
     ON st.id = td.solucion_tecnologica;
 """
-try:
-    # Conexión usando las variables de entorno
-    conn = psycopg2.connect(
-        host=db_host,
-        port=db_port,
-        dbname=db_name,
-        user=db_user,
-        password=db_pass
-    )
-    
-    df_seguimiento = pd.read_sql_query(query, conn)
-    print("Datos cargados exitosamente.")
 
-except Exception as e:
-    print(f"Error al conectar a la base de datos: {e}")
-
-finally:
-    # Nos aseguramos de cerrar la conexión si existe
-    if 'conn' in locals():
+def cargar_datos():
+    try:
+        conn = psycopg2.connect(
+            host=db_host,
+            port=db_port,
+            dbname=db_name,
+            user=db_user,
+            password=db_pass
+        )
+        df = pd.read_sql_query(query, conn)
         conn.close()
-        print("Conexión cerrada.")
+        print("Datos cargados exitosamente.")
+        return df
+    except Exception as e:
+        print(f"Error al conectar a la base de datos: {e}")
+
+    finally:
+        # Nos aseguramos de cerrar la conexión si existe
+        if 'conn' in locals():
+            conn.close()
+            print("Conexión cerrada.")
 
 # Carga archivo externo de frecuencias
 df_2025_2026 = pd.read_excel("Consolidado_Tramites_2025_2026_Final.xlsx")
 
-df_seguimiento_good = df_seguimiento[df_seguimiento['homoclave_actual'].notna()].copy()
-df_seguimiento_sh   = df_seguimiento[df_seguimiento['homoclave_actual'].isna()].copy()
-df_seguimiento = pd.merge(df_seguimiento_good, df_2025_2026, on='homoclave_actual', how='left', indicator=True)
+def obtener_dataframe_completo():
+    df = cargar_datos()
 
-df_seguimiento = df_seguimiento.loc[:, ~df_seguimiento.columns.duplicated()]
-df_seguimiento_sh = df_seguimiento_sh.loc[:, ~df_seguimiento_sh.columns.duplicated()]
-df_seguimiento = pd.concat([df_seguimiento, df_seguimiento_sh], ignore_index=True)
+    df_good = df[df['homoclave_actual'].notna()].copy()
+    df_sh   = df[df['homoclave_actual'].isna()].copy()
+    df = pd.merge(df_good, df_2025_2026, on='homoclave_actual', how='left', indicator=True)
 
-df_seguimiento['digitalizado_actualmente'] = df_seguimiento['digitalizado_actualmente'].map({True: 'Sí'}).fillna('No')
-df_seguimiento['digitalizado_atdt'] = df_seguimiento['digitalizado_atdt'].map({True: 'Sí'}).fillna('No')
-df_seguimiento['e2e_atdt'] = df_seguimiento['e2e_atdt'].map({True: 'Sí'}).fillna('No')
-df_seguimiento['solucion_tecnologica_nombre'] = df_seguimiento['solucion_tecnologica_nombre'].fillna('Sin dato')
-df_seguimiento['solucion_tecnologica_nombre'] = np.where(
-    df_seguimiento['digitalizado_atdt'] == 'No', 
-    'Sin dato', 
-    df_seguimiento['solucion_tecnologica_nombre']
-)
-df_seguimiento['solucion_tecnologica_nombre'] = np.where(
-    df_seguimiento['tipo_tramite'] == 'Beca CNBBBJ', 
-    'Beca', 
-    df_seguimiento['solucion_tecnologica_nombre']
-)
+    df = df.loc[:, ~df.columns.duplicated()]
+    df_sh = df_sh.loc[:, ~df_sh.columns.duplicated()]
+    df = pd.concat([df, df_sh], ignore_index=True)
 
-columnas_texto = [
-    "sector", "dependencia", "homoclave_actual", "nombre", 
-    "tipo_tramite", "responsable_estimacion"
-]
+    df['digitalizado_actualmente'] = df['digitalizado_actualmente'].map({True: 'Sí'}).fillna('No')
+    df['digitalizado_atdt'] = df['digitalizado_atdt'].map({True: 'Sí'}).fillna('No')
+    df['e2e_atdt'] = df['e2e_atdt'].map({True: 'Sí'}).fillna('No')
+    df['solucion_tecnologica_nombre'] = df['solucion_tecnologica_nombre'].fillna('Sin dato')
+    df['solucion_tecnologica_nombre'] = np.where(
+        df['digitalizado_atdt'] == 'No', 
+        'Sin dato', 
+        df['solucion_tecnologica_nombre']
+    )
+    df['solucion_tecnologica_nombre'] = np.where(
+        df['tipo_tramite'] == 'Beca CNBBBJ', 
+        'Beca', 
+        df['solucion_tecnologica_nombre']
+    )
 
-# Aplicamos la conversión y limpieza en un bucle
-for col in columnas_texto:
-    if col in df_seguimiento.columns:
-        df_seguimiento[col] = df_seguimiento[col].fillna('Sin dato').astype(str).str.strip()
+    columnas_texto = [
+        "sector", "dependencia", "homoclave_actual", "nombre", 
+        "tipo_tramite", "responsable_estimacion"
+    ]
+
+    # Aplicamos la conversión y limpieza en un bucle
+    for col in columnas_texto:
+        if col in df.columns:
+            df[col] = df[col].fillna('Sin dato').astype(str).str.strip()
+
+    return df
+
+df_seguimiento = obtener_dataframe_completo()
 
 # --- CONFIGURACIÓN DE FECHA ACTUAL ---
 meses = [
@@ -372,6 +380,7 @@ def export_excel(n_clicks, table_data):
      State('table-filter-estatus', 'value')]
 )
 def update_dashboard(sector, dependencia, digitalizado, atdt, n_clicks, homoclave, estatus):
+    df_seguimiento = obtener_dataframe_completo()
     if df_seguimiento.empty: 
         return [], go.Figure(), [], go.Figure(), [], go.Figure(), go.Figure(), [], "", "Todas", "Todos", "Todas", "Todas", "Todas", "Todos"
 
@@ -577,4 +586,4 @@ def update_dashboard(sector, dependencia, digitalizado, atdt, n_clicks, homoclav
             txt_dep, txt_sec, txt_sec, txt_dep, txt_dep, txt_sec)
 
 if __name__ == '__main__':
-    app.run_server(debug=True)
+    app.run(debug=True)
