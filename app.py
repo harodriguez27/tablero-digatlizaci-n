@@ -1,12 +1,104 @@
 import dash
 from dash import dcc, html, Input, Output, State, dash_table, callback_context, no_update
+import numpy as np
 import pandas as pd
-import plotly.graph_objects as go
-import plotly.express as px
 import io
+import os 
 from datetime import datetime
-# --- 1. CONFIGURACIÓN DE DATOS ---
-df_seguimiento = pd.read_pickle('datos_tablero.pkl')
+import psycopg2
+
+# Extraer variables de entorno
+db_host = os.environ.get('DB_HOST')
+db_port = os.environ.get('DB_PORT', '5432')
+db_name = os.environ.get('DB_NAME')
+db_user = os.environ.get('DB_USER')
+db_pass = os.environ.get('DB_PASS')
+
+query = """
+SELECT 
+    t.*,
+    td.*,
+    d.nombre AS dependencia,
+    ct.nombre AS tipo_tramite,
+    cs.nombre AS sector,
+    cd.nombre AS direccion,
+    cea.nombre AS estatus_acuerdo,
+    ced.nombre AS estatus_digitalizacion,
+    st.nombre AS solucion_tecnologica_nombre
+FROM tramites t
+LEFT JOIN tramites_digitalizacion td 
+    ON td.tramite_id = t.id
+LEFT JOIN dependencias d 
+    ON d.id = t.dependencia_id
+LEFT JOIN catalogos ct 
+    ON ct.id = t.tipo_tramite_id
+LEFT JOIN catalogos cs 
+    ON cs.id = td.sector_id
+LEFT JOIN catalogos cd 
+    ON cd.id = td.direccion_id
+LEFT JOIN catalogos cea 
+    ON cea.id = td.estatus_acuerdo_id
+LEFT JOIN catalogos ced 
+    ON ced.id = td.estatus_digitalizacion_id
+LEFT JOIN catalogos st 
+    ON st.id = td.solucion_tecnologica;
+"""
+try:
+    # Conexión usando las variables de entorno
+    conn = psycopg2.connect(
+        host=db_host,
+        port=db_port,
+        dbname=db_name,
+        user=db_user,
+        password=db_pass
+    )
+    
+    df_seguimiento = pd.read_sql_query(query, conn)
+    print("Datos cargados exitosamente.")
+
+except Exception as e:
+    print(f"Error al conectar a la base de datos: {e}")
+
+finally:
+    # Nos aseguramos de cerrar la conexión si existe
+    if 'conn' in locals():
+        conn.close()
+        print("Conexión cerrada.")
+
+# Carga archivo externo de frecuencias
+df_2025_2026 = pd.read_excel("Consolidado_Tramites_2025_2026_Final.xlsx")
+
+df_seguimiento_good = df_seguimiento[df_seguimiento['homoclave_actual'].notna()].copy()
+df_seguimiento_sh   = df_seguimiento[df_seguimiento['homoclave_actual'].isna()].copy()
+df_seguimiento = pd.merge(df_seguimiento_good, df_2025_2026, on='homoclave_actual', how='left', indicator=True)
+
+df_seguimiento = df_seguimiento.loc[:, ~df_seguimiento.columns.duplicated()]
+df_seguimiento_sh = df_seguimiento_sh.loc[:, ~df_seguimiento_sh.columns.duplicated()]
+df_seguimiento = pd.concat([df_seguimiento, df_seguimiento_sh], ignore_index=True)
+
+df_seguimiento['digitalizado_actualmente'] = df_seguimiento['digitalizado_actualmente'].map({True: 'Sí'}).fillna('No')
+df_seguimiento['digitalizado_atdt'] = df_seguimiento['digitalizado_atdt'].map({True: 'Sí'}).fillna('No')
+df_seguimiento['e2e_atdt'] = df_seguimiento['e2e_atdt'].map({True: 'Sí'}).fillna('No')
+df_seguimiento['solucion_tecnologica_nombre'] = df_seguimiento['solucion_tecnologica_nombre'].fillna('Sin dato')
+df_seguimiento['solucion_tecnologica_nombre'] = np.where(
+    df_seguimiento['digitalizado_atdt'] == 'No', 
+    'Sin dato', 
+    df_seguimiento['solucion_tecnologica_nombre']
+)
+df_seguimiento['solucion_tecnologica_nombre'] = np.where(
+    df_seguimiento['tipo_tramite'] == 'Beca CNBBBJ', 
+    'Beca', 
+    df_seguimiento['solucion_tecnologica_nombre']
+)
+
+columnas_texto = [
+    "sector", "dependencia", "homoclave_actual", "nombre", 
+    "tipo_tramite", "responsable_estimacion"
+]
+
+# Aplicamos la conversión y limpieza en un bucle
+for col in columnas_texto:
+    if col in df_seguimiento.columns:df_seguimiento[col] = (df_seguimiento[col].astype(str).replace(['nan', 'None', 'NaN', ''], 'Sin dato').str.strip())
 
 # --- CONFIGURACIÓN DE FECHA ACTUAL ---
 meses = [
@@ -18,12 +110,11 @@ fecha_hoy = f"{ahora.day} de {meses[ahora.month - 1]} de {ahora.year}"
 
 # Columnas para la tabla
 dff_columnas_mapping = [
-    "Sector", "Dependencia", "Homoclave", "Nombre del trámite", 
-    "Tipo trámite agrupado", "Solución tecnológica", "Responsable digitalización", 
-    "Frecuencia 2024", "tramite_digitalizados_actualizado_2026", 
-    "tramite_digitalizados_atdt", "tramite_e2e_actualizado_2026"
+    "sector", "dependencia", "homoclave_actual", "nombre", 
+    "tipo_tramite", "solucion_tecnologica_nombre", "responsable_estimacion", 
+    "frecuencia_2024", "digitalizado_actualmente", 
+    "digitalizado_atdt", "e2e_atdt"
 ]
-
 app = dash.Dash(__name__)
 server = app.server
 
@@ -68,19 +159,19 @@ app.layout = html.Div(style={'backgroundColor': '#fcfcfc', 'padding': '40px', 'f
     html.Div(style={'display': 'flex', 'gap': '30px', 'marginBottom': '30px', 'maxWidth': '1200px', 'margin': '0 auto 30px auto', 'alignItems': 'flex-end'}, children=[
         html.Div([
             html.Label("Selecciona un sector", style={'fontWeight': 'bold', 'fontSize': '12px', 'color': '#444'}),
-            dcc.Dropdown(id='filter-Sector', options=[{'label': i, 'value': i} for i in sorted(df_seguimiento['Sector'].unique())] if not df_seguimiento.empty else [], multi=True, placeholder="Seleccionar")
+            dcc.Dropdown(id='filter-Sector', options=[{'label': i, 'value': i} for i in sorted(df_seguimiento['sector'].unique().astype(str))] if not df_seguimiento.empty else [], multi=True, placeholder="Seleccionar")
         ], style={'flex': '1'}),
         html.Div([
             html.Label("Selecciona una dependencia", style={'fontWeight': 'bold', 'fontSize': '12px', 'color': '#444'}),
-            dcc.Dropdown(id='filter-Dependencia', options=[{'label': i, 'value': i} for i in sorted(df_seguimiento['Dependencia'].unique())] if not df_seguimiento.empty else [], multi=True, placeholder="Seleccionar")
+            dcc.Dropdown(id='filter-Dependencia', options=[{'label': i, 'value': i} for i in sorted(df_seguimiento['dependencia'].unique().astype(str))] if not df_seguimiento.empty else [], multi=True, placeholder="Seleccionar")
         ], style={'flex': '1'}),
         html.Div([
             html.Label("Selecciona si está digitalizado", style={'fontWeight': 'bold', 'fontSize': '12px', 'color': '#444'}),
-            dcc.Dropdown(id='filter-Digitalizado', options=[{'label': i, 'value': i} for i in sorted(df_seguimiento['tramite_digitalizados_actualizado_2026'].unique())] if not df_seguimiento.empty else [], multi=True, placeholder="Seleccionar")
+            dcc.Dropdown(id='filter-Digitalizado', options=[{'label': i, 'value': i} for i in sorted(df_seguimiento['digitalizado_actualmente'].unique())] if not df_seguimiento.empty else [], multi=True, placeholder="Seleccionar")
         ], style={'flex': '1'}),
         html.Div([
             html.Label("Selecciona si está digitalizado por la ATDT", style={'fontWeight': 'bold', 'fontSize': '12px', 'color': '#444'}),
-            dcc.Dropdown(id='filter-ATDT', options=[{'label': i, 'value': i} for i in sorted(df_seguimiento['tramite_digitalizados_atdt'].unique())] if not df_seguimiento.empty else [], multi=True, placeholder="Seleccionar")
+            dcc.Dropdown(id='filter-ATDT', options=[{'label': i, 'value': i} for i in sorted(df_seguimiento['digitalizado_atdt'].unique())] if not df_seguimiento.empty else [], multi=True, placeholder="Seleccionar")
         ], style={'flex': '1'}),
         html.Button("Limpiar Filtros", id='btn-limpiar', n_clicks=0, style={
             'backgroundColor': '#fcfcfc', 'border': '1px solid #1a3e35', 'color': '#1a3e35', 'padding': '8px 15px', 'borderRadius': '4px', 'cursor': 'pointer', 'fontSize': '12px'
@@ -98,7 +189,7 @@ app.layout = html.Div(style={'backgroundColor': '#fcfcfc', 'padding': '40px', 'f
                 html.P("Periodo: Enero 2025 - Abril 2026", style={'color': '#999', 'fontSize': '14px', 'margin': '5px 0 0 0'}),
             ]),
             html.Div(style={'textAlign': 'right', 'fontSize': '12px', 'color': '#666'}, children=[
-                html.Span("Dependencia: "), html.Strong("Todas", id='txt-dep-sankey', style={'backgroundColor': '#8fa19e', 'color': 'white', 'padding': '2px 10px', 'borderRadius': '10px'}),
+                html.Span("dependencia: "), html.Strong("Todas", id='txt-dep-sankey', style={'backgroundColor': '#8fa19e', 'color': 'white', 'padding': '2px 10px', 'borderRadius': '10px'}),
                 html.Br(),
                 html.Span("Sector: ", style={'marginTop': '5px', 'display': 'inline-block'}), html.Strong("Todos", id='txt-sec-sankey', style={'backgroundColor': '#8fa19e', 'color': 'white', 'padding': '2px 10px', 'borderRadius': '10px'}),
             ])
@@ -158,7 +249,7 @@ app.layout = html.Div(style={'backgroundColor': '#fcfcfc', 'padding': '40px', 'f
             ]),
             html.Div([
                 html.Label("Estatus de digitalización", style={'fontWeight': 'bold', 'fontSize': '13px'}),
-                dcc.Dropdown(id='table-filter-estatus', options=[{'label': i, 'value': i} for i in sorted(df_seguimiento['tramite_digitalizados_actualizado_2026'].unique())], placeholder="Seleccionar", style={'width': '250px', 'marginTop': '5px'})
+                dcc.Dropdown(id='table-filter-estatus', options=[{'label': i, 'value': i} for i in sorted(df_seguimiento['digitalizado_actualmente'].unique())], placeholder="Seleccionar", style={'width': '250px', 'marginTop': '5px'})
             ]),
             html.Button("Buscar", id='btn-buscar', n_clicks=0, style={'backgroundColor': '#1a4e44', 'color': 'white', 'padding': '10px 25px', 'border': 'none', 'borderRadius': '4px', 'cursor': 'pointer'}),
             html.Button("Exportar datos", id='btn-exportar', n_clicks=0, style={'backgroundColor': 'white', 'border': '1px solid #1a4e44', 'color': '#1a4e44', 'padding': '10px 20px', 'borderRadius': '4px', 'cursor': 'pointer'}),
@@ -195,36 +286,36 @@ def update_filter_options(sel_sector, sel_dep, sel_dig, sel_atdt):
     if not ctx.triggered:
         def get_all(col):
             return [{'label': str(i), 'value': i} for i in sorted(df_seguimiento[col].unique())]
-        return get_all('Sector'), get_all('Dependencia'), get_all('tramite_digitalizados_actualizado_2026'), get_all('tramite_digitalizados_atdt')
+        return get_all('sector'), get_all('dependencia'), get_all('digitalizado_actualmente'), get_all('digitalizado_atdt')
 
     def get_opts(df, col):
         return [{'label': str(i), 'value': i} for i in sorted(df[col].unique())]
 
     # Sector
     df_sec = df_seguimiento.copy()
-    if sel_dep:  df_sec = df_sec[df_sec['Dependencia'].isin(sel_dep)]
-    if sel_dig:  df_sec = df_sec[df_sec['tramite_digitalizados_actualizado_2026'].isin(sel_dig)]
-    if sel_atdt: df_sec = df_sec[df_sec['tramite_digitalizados_atdt'].isin(sel_atdt)]
+    if sel_dep:  df_sec = df_sec[df_sec['dependencia'].isin(sel_dep)]
+    if sel_dig:  df_sec = df_sec[df_sec['digitalizado_actualmente'].isin(sel_dig)]
+    if sel_atdt: df_sec = df_sec[df_sec['digitalizado_atdt'].isin(sel_atdt)]
     
     # Dependencia
     df_dep = df_seguimiento.copy()
-    if sel_sector: df_dep = df_dep[df_dep['Sector'].isin(sel_sector)]
-    if sel_dig:    df_dep = df_dep[df_dep['tramite_digitalizados_actualizado_2026'].isin(sel_dig)]
-    if sel_atdt:   df_dep = df_dep[df_dep['tramite_digitalizados_atdt'].isin(sel_atdt)]
+    if sel_sector: df_dep = df_dep[df_dep['sector'].isin(sel_sector)]
+    if sel_dig:    df_dep = df_dep[df_dep['digitalizado_actualmente'].isin(sel_dig)]
+    if sel_atdt:   df_dep = df_dep[df_dep['digitalizado_atdt'].isin(sel_atdt)]
     
     # Digitalizado
     df_dig_opts = df_seguimiento.copy()
-    if sel_sector: df_dig_opts = df_dig_opts[df_dig_opts['Sector'].isin(sel_sector)]
-    if sel_dep:    df_dig_opts = df_dig_opts[df_dig_opts['Dependencia'].isin(sel_dep)]
-    if sel_atdt:   df_dig_opts = df_dig_opts[df_dig_opts['tramite_digitalizados_atdt'].isin(sel_atdt)]
+    if sel_sector: df_dig_opts = df_dig_opts[df_dig_opts['sector'].isin(sel_sector)]
+    if sel_dep:    df_dig_opts = df_dig_opts[df_dig_opts['dependencia'].isin(sel_dep)]
+    if sel_atdt:   df_dig_opts = df_dig_opts[df_dig_opts['digitalizado_atdt'].isin(sel_atdt)]
 
     # ATDT
     df_atdt_opts = df_seguimiento.copy()
-    if sel_sector: df_atdt_opts = df_atdt_opts[df_atdt_opts['Sector'].isin(sel_sector)]
-    if sel_dep:    df_atdt_opts = df_atdt_opts[df_atdt_opts['Dependencia'].isin(sel_dep)]
-    if sel_dig:    df_atdt_opts = df_atdt_opts[df_atdt_opts['tramite_digitalizados_actualizado_2026'].isin(sel_dig)]
+    if sel_sector: df_atdt_opts = df_atdt_opts[df_atdt_opts['sector'].isin(sel_sector)]
+    if sel_dep:    df_atdt_opts = df_atdt_opts[df_atdt_opts['dependencia'].isin(sel_dep)]
+    if sel_dig:    df_atdt_opts = df_atdt_opts[df_atdt_opts['digitalizado_actualmente'].isin(sel_dig)]
 
-    return get_opts(df_sec, 'Sector'), get_opts(df_dep, 'Dependencia'), get_opts(df_dig_opts, 'tramite_digitalizados_actualizado_2026'), get_opts(df_atdt_opts, 'tramite_digitalizados_atdt')
+    return get_opts(df_sec, 'sector'), get_opts(df_dep, 'dependencia'), get_opts(df_dig_opts, 'digitalizado_actualmente'), get_opts(df_atdt_opts, 'digitalizado_atdt')
 
 # CALLBACK 2: LIMPIAR FILTROS
 @app.callback(
@@ -284,45 +375,45 @@ def update_dashboard(sector, dependencia, digitalizado, atdt, n_clicks, homoclav
     dff = df_seguimiento.copy()
     
     # --- FILTRADO POR DROPDOWNS PRINCIPALES ---
-    if sector: dff = dff[dff['Sector'].isin(sector)]
-    if dependencia: dff = dff[dff['Dependencia'].isin(dependencia)]
-    if digitalizado: dff = dff[dff['tramite_digitalizados_actualizado_2026'].isin(digitalizado)]
-    if atdt: dff = dff[dff['tramite_digitalizados_atdt'].isin(atdt)]
+    if sector: dff = dff[dff['sector'].isin(sector)]
+    if dependencia: dff = dff[dff['dependencia'].isin(dependencia)]
+    if digitalizado: dff = dff[dff['digitalizado_actualmente'].isin(digitalizado)]
+    if atdt: dff = dff[dff['digitalizado_atdt'].isin(atdt)]
 
     # --- LÓGICA DE MÉTRICAS ORIGINAL ---
     total_tra = len(dff)
-    vol_total = dff['Frecuencia 2024'].sum() or 1
-    df_dig = dff[dff['tramite_digitalizados_actualizado_2026'] == 'Digitalizado']
-    df_pre = dff[dff['tramite_digitalizados_actualizado_2026'] != 'Digitalizado']
-    df_atdt = dff[dff['tramite_digitalizados_atdt'] == 'Digitalizado ATDT']
-    df_otras = df_dig[df_dig['tramite_digitalizados_atdt'] != 'Digitalizado ATDT']
-    df_punta = df_atdt[df_atdt['tramite_e2e_actualizado_2026'] == 'SI']
-    df_hibrido = df_atdt[df_atdt['tramite_e2e_actualizado_2026'] == 'NO']
-    df_dig_punta = df_dig[df_dig['tramite_e2e_actualizado_2026'] == 'SI']
-    df_dig_hibrido = df_dig[df_dig['tramite_e2e_actualizado_2026'] == 'NO']
+    vol_total = dff['frecuencia_2024'].sum() or 1
+    df_dig = dff[dff['digitalizado_actualmente'] == 'Sí']
+    df_pre = dff[dff['digitalizado_actualmente'] != 'Sí']
+    df_atdt = dff[dff['digitalizado_atdt'] == 'Sí']
+    df_otras = df_dig[df_dig['digitalizado_atdt'] != 'Sí']
+    df_punta = df_atdt[df_atdt['e2e_atdt'] == 'Sí']
+    df_hibrido = df_atdt[df_atdt['e2e_atdt'] == 'No']
+    df_dig_punta = df_dig[df_dig['e2e_atdt'] == 'Sí']
+    df_dig_hibrido = df_dig[df_dig['e2e_atdt'] == 'No']
 
     tarjetas = [
         crear_tarjeta_indicador("Total de trámites", total_tra, [
-            {'label': 'Digitalizados', 'valor': len(df_dig), 'volumen': df_dig['Frecuencia 2024'].sum(), 'pct_vol': (df_dig['Frecuencia 2024'].sum()/vol_total)*100},
-            {'label': 'Presenciales', 'valor': len(df_pre), 'volumen': df_pre['Frecuencia 2024'].sum(), 'pct_vol': (df_pre['Frecuencia 2024'].sum()/vol_total)*100}
+            {'label': 'Digitalizados', 'valor': len(df_dig), 'volumen': df_dig['frecuencia_2024'].sum(), 'pct_vol': (df_dig['frecuencia_2024'].sum()/vol_total)*100},
+            {'label': 'Presenciales', 'valor': len(df_pre), 'volumen': df_pre['frecuencia_2024'].sum(), 'pct_vol': (df_pre['frecuencia_2024'].sum()/vol_total)*100}
         ]),
         crear_tarjeta_indicador("Trámites digitalizados", len(df_dig), [
-            {'label': 'Otras dep.', 'valor': len(df_otras), 'volumen': df_otras['Frecuencia 2024'].sum(), 'pct_vol': (df_otras['Frecuencia 2024'].sum()/vol_total)*100},
-            {'label': 'ATDT', 'valor': len(df_atdt), 'volumen': df_atdt['Frecuencia 2024'].sum(), 'pct_vol': (df_atdt['Frecuencia 2024'].sum()/vol_total)*100}
+            {'label': 'Otras dep.', 'valor': len(df_otras), 'volumen': df_otras['frecuencia_2024'].sum(), 'pct_vol': (df_otras['frecuencia_2024'].sum()/vol_total)*100},
+            {'label': 'ATDT', 'valor': len(df_atdt), 'volumen': df_atdt['frecuencia_2024'].sum(), 'pct_vol': (df_atdt['frecuencia_2024'].sum()/vol_total)*100}
         ]),
         crear_tarjeta_indicador("Trámites digitalizados por la ATDT", len(df_atdt), [
-            {'label': 'Punta a punta', 'valor': len(df_punta), 'volumen': df_punta['Frecuencia 2024'].sum(), 'pct_vol': (df_punta['Frecuencia 2024'].sum()/vol_total)*100},
-            {'label': 'Híbridos', 'valor': len(df_hibrido), 'volumen': df_hibrido['Frecuencia 2024'].sum(), 'pct_vol': (df_hibrido['Frecuencia 2024'].sum()/vol_total)*100}
+            {'label': 'Punta a punta', 'valor': len(df_punta), 'volumen': df_punta['frecuencia_2024'].sum(), 'pct_vol': (df_punta['frecuencia_2024'].sum()/vol_total)*100},
+            {'label': 'Híbridos', 'valor': len(df_hibrido), 'volumen': df_hibrido['frecuencia_2024'].sum(), 'pct_vol': (df_hibrido['frecuencia_2024'].sum()/vol_total)*100}
         ])
     ]
 
     # --- SANKEY ORIGINAL ---
     label_universo = f"<b>{format_number(total_tra)}</b><br>Trámites"
-    label_digitales = f"<b>{format_number(len(df_dig))}</b><br>Digitales · {len(df_dig)/total_tra*100:.0f}%<br><span style='font-size:10px'>{format_number(df_dig['Frecuencia 2024'].sum())} actos · {df_dig['Frecuencia 2024'].sum()/vol_total*100:.1f}% del uso</span>"
-    label_presenciales = f"<b>{format_number(len(df_pre))}</b><br>Presenciales · {len(df_pre)/total_tra*100:.0f}%<br><span style='font-size:10px'>{format_number(df_pre['Frecuencia 2024'].sum())} actos · {df_pre['Frecuencia 2024'].sum()/vol_total*100:.1f}% del uso</span>"
-    label_punta = f"<b>{format_number(len(df_dig_punta))} Punta a punta</b><br><span style='font-size:10px'>{len(df_dig_punta)/total_tra*100:.1f}% del total<br>{format_number(df_dig_punta['Frecuencia 2024'].sum())} actos</span>"
-    label_hibrido = f"<b>{format_number(len(df_dig_hibrido))} Híbridos</b><br><span style='font-size:10px'>{len(df_dig_hibrido)/total_tra*100:.1f}% del total<br>{format_number(df_dig_hibrido['Frecuencia 2024'].sum())} actos</span>"
-    label_pre_final = f"<b>{format_number(len(df_pre))} Presenciales</b><br><span style='font-size:10px'>{len(df_pre)/total_tra*100:.1f}% del total<br>{format_number(df_pre['Frecuencia 2024'].sum())} actos</span>"
+    label_digitales = f"<b>{format_number(len(df_dig))}</b><br>Digitales · {len(df_dig)/total_tra*100:.0f}%<br><span style='font-size:10px'>{format_number(df_dig['frecuencia_2024'].sum())} actos · {df_dig['frecuencia_2024'].sum()/vol_total*100:.1f}% del uso</span>"
+    label_presenciales = f"<b>{format_number(len(df_pre))}</b><br>Presenciales · {len(df_pre)/total_tra*100:.0f}%<br><span style='font-size:10px'>{format_number(df_pre['frecuencia_2024'].sum())} actos · {df_pre['frecuencia_2024'].sum()/vol_total*100:.1f}% del uso</span>"
+    label_punta = f"<b>{format_number(len(df_dig_punta))} Punta a punta</b><br><span style='font-size:10px'>{len(df_dig_punta)/total_tra*100:.1f}% del total<br>{format_number(df_dig_punta['frecuencia_2024'].sum())} actos</span>"
+    label_hibrido = f"<b>{format_number(len(df_dig_hibrido))} Híbridos</b><br><span style='font-size:10px'>{len(df_dig_hibrido)/total_tra*100:.1f}% del total<br>{format_number(df_dig_hibrido['frecuencia_2024'].sum())} actos</span>"
+    label_pre_final = f"<b>{format_number(len(df_pre))} Presenciales</b><br><span style='font-size:10px'>{len(df_pre)/total_tra*100:.1f}% del total<br>{format_number(df_pre['frecuencia_2024'].sum())} actos</span>"
 
     fig_sankey = go.Figure(data=[go.Sankey(
         arrangement = "snap",
@@ -344,22 +435,22 @@ def update_dashboard(sector, dependencia, digitalizado, atdt, n_clicks, homoclav
 
     # --- LÓGICA GRÁFICA DE RESPONSABLES ORIGINAL ---
     config_soluciones = [
-        {'label': 'Actualización a Sistema (Dependencia)', 'color': '#8cb54a', 'key': 'Dependencia'},
+        {'label': 'Actualización a Sistema (Dependencia)', 'color': '#8cb54a', 'key': 'dependencia'},
         {'label': 'Actualización a Sistema (FSW)', 'color': '#1a7a6a', 'key': 'FSW'},
         {'label': 'Beca', 'color': '#1e3d59', 'key': 'Beca'},
-        {'label': 'Motor Transaccional (FSW)', 'color': '#2d5731', 'key': 'FSW'},
-        {'label': 'Nuevo Desarrollo (Dependencia)', 'color': '#7c5532', 'key': 'Dependencia'},
+        {'label': 'Motor Transaccional', 'color': '#2d5731', 'key': 'FSW'},
+        {'label': 'Nuevo Desarrollo (Dependencia)', 'color': '#7c5532', 'key': 'dependencia'},
         {'label': 'Nuevo Desarrollo (FSW)', 'color': '#802f4a', 'key': 'FSW'}
     ]
 
     mini_cards = []
     fig_barras = go.Figure()
-    df_fsw_all = dff[dff['Solución tecnológica'].str.contains('FSW|Beca|Motor', case=False, na=False)]
-    df_dep_all = dff[dff['Solución tecnológica'].str.contains('Dependencia', case=False, na=False)]
+    df_fsw_all = dff[dff['solucion_tecnologica_nombre'].str.contains('FSW|Beca|Motor', case=False, na=False)]
+    df_dep_all = dff[dff['solucion_tecnologica_nombre'].str.contains('Dependencia', case=False, na=False)]
 
     for conf in config_soluciones:
-        sub = dff[dff['Solución tecnológica'] == conf['label']]
-        vol_sub = sub['Frecuencia 2024'].sum()
+        sub = dff[dff['solucion_tecnologica_nombre'] == conf['label']]
+        vol_sub = sub['frecuencia_2024'].sum()
         mini_cards.append(html.Div(style={'flex': '1', 'display': 'flex', 'border': '1px solid #ddd', 'borderRadius': '6px', 'overflow': 'hidden', 'height': '75px'}, children=[
             html.Div(style={'backgroundColor': conf['color'], 'width': '60%', 'padding': '10px', 'color': 'white', 'textAlign': 'center'}, children=[
                 html.P(conf['label'], style={'margin': '0', 'fontSize': '9px', 'fontWeight': 'bold'}),
@@ -374,7 +465,7 @@ def update_dashboard(sector, dependencia, digitalizado, atdt, n_clicks, homoclav
 
         for resp in ['Fábrica de SW', 'Dependencia']:
             df_comp = df_fsw_all if resp == 'Fábrica de SW' else df_dep_all
-            val = len(df_comp[df_comp['Solución tecnológica'] == conf['label']])
+            val = len(df_comp[df_comp['solucion_tecnologica_nombre'] == conf['label']])
             if val > 0:
                 fig_barras.add_trace(go.Bar(
                     y=[resp], x=[val], orientation='h', name=conf['label'],
@@ -392,7 +483,7 @@ def update_dashboard(sector, dependencia, digitalizado, atdt, n_clicks, homoclav
     fig_barras.add_annotation(x=len(df_fsw_all), y='Fábrica de SW', text=f"  {len(df_fsw_all)}  ", xanchor='left', showarrow=False, bgcolor="#eee", font=dict(size=14, weight='bold'))
 
     # --- LÓGICA DINÁMICA: VOLUMEN POR AÑO ORIGINAL ---
-    vol_2024 = dff['Frecuencia 2024'].sum()
+    vol_2024 = dff['frecuencia_2024'].sum()
     vol_2025 = dff['TOTAL ANUAL 2025'].sum()
     vol_2026 = dff['TOTAL ANUAL 2026'].sum()
     
@@ -448,16 +539,16 @@ def update_dashboard(sector, dependencia, digitalizado, atdt, n_clicks, homoclav
     )
 
     # --- LÓGICA TREEMAP ORIGINAL ---
-    df_tree = dff.groupby('Sector').agg({'Sector': 'count', 'Frecuencia 2024': 'sum'}).rename(columns={'Sector': 'count'}).reset_index()
+    df_tree = dff.groupby('sector').agg({'sector': 'count', 'frecuencia_2024': 'sum'}).rename(columns={'sector': 'count'}).reset_index()
     fig_tree = px.treemap(
-        df_tree, path=[px.Constant("Distribución"), 'Sector'], values='count', color='count',
+        df_tree, path=[px.Constant("Distribución"), 'sector'], values='count', color='count',
         color_continuous_scale=['#b2c4c9', '#3b6e63', '#1a3e35'],
     )
     fig_tree.update_traces(
         textinfo="label+value+percent parent",
         texttemplate="<b>%{label}</b><br>%{value}<br>%{percentParent:.1%}",
         hovertemplate="<b>%{label}</b><br>Cantidad: %{value}<br>Volumen de uso: %{customdata[0]:,}<extra></extra>",
-        customdata=df_tree[['Frecuencia 2024']],
+        customdata=df_tree[['frecuencia_2024']],
         marker=dict(line=dict(width=1, color='white'))
     )
     fig_tree.update_layout(margin=dict(t=0, l=0, r=0, b=0), height=500, coloraxis_showscale=False)
@@ -465,9 +556,9 @@ def update_dashboard(sector, dependencia, digitalizado, atdt, n_clicks, homoclav
     # --- LÓGICA DINÁMICA DE LA TABLA ---
     dff_tabla = dff.copy()
     if homoclave:
-        dff_tabla = dff_tabla[dff_tabla['Homoclave'].str.contains(homoclave, case=False, na=False)]
+        dff_tabla = dff_tabla[dff_tabla['homoclave_actual'].str.contains(homoclave, case=False, na=False)]
     if estatus:
-        dff_tabla = dff_tabla[dff_tabla['tramite_digitalizados_actualizado_2026'] == estatus]
+        dff_tabla = dff_tabla[dff_tabla['digitalizado_actualmente'] == estatus]
 
     conteo_texto = html.Div([
         html.P("Resultados encontrados:", style={'margin': '0', 'fontSize': '12px'}),
