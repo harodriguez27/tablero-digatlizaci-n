@@ -1,8 +1,10 @@
 import dash
 from dash import dcc, html, Input, Output, State, dash_table, callback_context, no_update
-import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
+import plotly.express as px
 import io
+import numpy as np
 import os 
 from datetime import datetime
 import psycopg2
