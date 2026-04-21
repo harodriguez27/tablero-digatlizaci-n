@@ -77,6 +77,7 @@ def obtener_dataframe_completo():
     df_good = df[df['homoclave_actual'].notna()].copy()
     df_sh   = df[df['homoclave_actual'].isna()].copy()
     df = pd.merge(df_good, df_2025_2026, on='homoclave_actual', how='left', indicator=True)
+    df['homoclave_actual'] = df['homoclave_actual'].str.replace('CRE', 'CNE', regex=False)
 
     df = df.loc[:, ~df.columns.duplicated()]
     df_sh = df_sh.loc[:, ~df_sh.columns.duplicated()]
