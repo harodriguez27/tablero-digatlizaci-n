@@ -73,11 +73,26 @@ df_2025_2026 = pd.read_excel("Consolidado_Tramites_2025_2026_Final.xlsx")
 
 def obtener_dataframe_completo():
     df = cargar_datos()
+    df['homoclave_actual'] = df['homoclave_actual'].str.replace('CRE', 'CNE', regex=False)
 
     df_good = df[df['homoclave_actual'].notna()].copy()
     df_sh   = df[df['homoclave_actual'].isna()].copy()
+    # 1er merge
     df = pd.merge(df_good, df_2025_2026, on='homoclave_actual', how='left', indicator=True)
-    df['homoclave_actual'] = df['homoclave_actual'].str.replace('CRE', 'CNE', regex=False)
+    # 2do merge
+    df_matched = df[df['_merge'] == 'both'].copy()
+    df_missing = df[df['_merge'] == 'left_only'].copy()
+    cols_from_catalog = [c for c in df_2025_2026.columns if c != 'homoclave_actual']
+    df_missing = df_missing.drop(columns=cols_from_catalog + ['_merge'])
+    df_rescued = pd.merge(df_missing, df_2025_2026, 
+        left_on='homoclave_anterior', 
+        right_on='homoclave_actual', 
+        how='left',
+        suffixes=('', '_drop'))
+    df_rescued = df_rescued.drop(columns=['homoclave_actual_drop'])
+    df_rescued = df_rescued.loc[:, ~df_rescued.columns.duplicated()]
+    df_matched = df_matched.loc[:, ~df_matched.columns.duplicated()]
+    df = pd.concat([df_matched, df_rescued], ignore_index=True)
 
     df = df.loc[:, ~df.columns.duplicated()]
     df_sh = df_sh.loc[:, ~df_sh.columns.duplicated()]
