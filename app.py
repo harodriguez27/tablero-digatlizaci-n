@@ -21,6 +21,7 @@ SELECT
     t.*,
     td.*,
     d.nombre AS dependencia,
+    d.acronimo as acronimo,
     ct.nombre AS tipo_tramite,
     cs.nombre AS sector,
     cd.nombre AS direccion,
@@ -43,7 +44,8 @@ LEFT JOIN catalogos cea
 LEFT JOIN catalogos ced 
     ON ced.id = td.estatus_digitalizacion_id
 LEFT JOIN catalogos st 
-    ON st.id = td.solucion_tecnologica;
+    ON st.id = td.solucion_tecnologica
+WHERE t.deleted_at IS NULL;
 """
 
 def cargar_datos():
