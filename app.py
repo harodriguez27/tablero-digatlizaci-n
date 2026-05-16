@@ -101,7 +101,12 @@ def obtener_dataframe_completo():
     df = pd.concat([df, df_sh], ignore_index=True)
 
     df['digitalizado_actualmente'] = df['digitalizado_actualmente'].map({True: 'Sí'}).fillna('No')
-    df['digitalizado_atdt'] = df['digitalizado_atdt'].map({True: 'Sí'}).fillna('No')
+    df['digitalizado_atdt'] = np.where(
+    df['estatus_digitalizacion'] == 'Liberado/Productivo', 
+    'Sí', 
+    'No'
+    )
+    
     df['e2e_atdt'] = df['e2e_atdt'].map({True: 'Sí'}).fillna('No')
     df['solucion_tecnologica_nombre'] = df['solucion_tecnologica_nombre'].fillna('Sin dato')
     df['solucion_tecnologica_nombre'] = np.where(
