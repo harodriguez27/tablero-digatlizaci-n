@@ -8,7 +8,7 @@ import numpy as np
 import os 
 from datetime import datetime
 import psycopg2
-from dotenv import load_dotenv
+#from dotenv import load_dotenv
 #load_dotenv()
 
 # Extraer variables de entorno
