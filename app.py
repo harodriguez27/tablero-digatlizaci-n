@@ -8,22 +8,8 @@ import numpy as np
 import os 
 from datetime import datetime
 import psycopg2
-
-def cargar_env_local(ruta=".env"):
-    if not os.path.exists(ruta):
-        return
-
-    with open(ruta, "r", encoding="utf-8") as archivo_env:
-        for linea in archivo_env:
-            linea = linea.strip()
-            if not linea or linea.startswith("#") or "=" not in linea:
-                continue
-
-            clave, valor = linea.split("=", 1)
-            os.environ.setdefault(clave.strip(), valor.strip().strip('"').strip("'"))
-
-
-cargar_env_local()
+from dotenv import load_dotenv
+#load_dotenv()
 
 # Extraer variables de entorno
 db_host = os.environ.get('DB_HOST')
@@ -79,7 +65,6 @@ def cargar_datos():
         return df
     except Exception as e:
         print(f"Error al conectar a la base de datos: {e}")
-        return pd.DataFrame()
 
     finally:
         # Nos aseguramos de cerrar la conexión si existe
@@ -92,13 +77,6 @@ df_2025_2026 = pd.read_excel("Consolidado_Tramites_2025_2026_Final.xlsx")
 
 def obtener_dataframe_completo():
     df = cargar_datos()
-    if df.empty:
-        return df
-
-    if 'homoclave_actual' not in df.columns:
-        print("Error: la consulta no devolvio la columna homoclave_actual.")
-        return pd.DataFrame()
-
     df['homoclave_actual'] = df['homoclave_actual'].str.replace('CRE', 'CNE', regex=False)
 
     df_good = df[df['homoclave_actual'].notna()].copy()
@@ -173,15 +151,7 @@ dff_columnas_mapping = [
     "frecuencia_2024", "digitalizado_actualmente", 
     "digitalizado_atdt", "e2e_atdt"
 ]
-app = dash.Dash(
-    __name__,
-    external_stylesheets=[
-        "https://framework-gb.cdn.gob.mx/gm/v3/assets/styles/main.css"
-    ],
-    external_scripts=[
-        "https://framework-gb.cdn.gob.mx/gm/v3/assets/js/gobmx.js"
-    ]
-)
+app = dash.Dash(__name__)
 server = app.server
 
 # --- 2. FUNCIONES DE APOYO ---
@@ -252,7 +222,7 @@ app.layout = html.Div(style={'backgroundColor': '#fcfcfc', 'padding': '40px', 'f
         html.Div(style={'display': 'flex', 'justifyContent': 'space-between', 'alignItems': 'flex-end', 'marginBottom': '10px'}, children=[
             html.Div([
                 html.H2("Digitalización de trámites federales", style={'color': '#000', 'fontSize': '24px', 'margin': '0'}),
-                html.P("Periodo: Enero 2025 - Junio 2026", style={'color': '#999', 'fontSize': '14px', 'margin': '5px 0 0 0'}),
+                html.P("Periodo: Enero 2025 - Abril 2026", style={'color': '#999', 'fontSize': '14px', 'margin': '5px 0 0 0'}),
             ]),
             html.Div(style={'textAlign': 'right', 'fontSize': '12px', 'color': '#666'}, children=[
                 html.Span("dependencia: "), html.Strong("Todas", id='txt-dep-sankey', style={'backgroundColor': '#8fa19e', 'color': 'white', 'padding': '2px 10px', 'borderRadius': '10px'}),
@@ -282,7 +252,7 @@ app.layout = html.Div(style={'backgroundColor': '#fcfcfc', 'padding': '40px', 'f
             html.Div([
                 html.H2("Volumen de uso por año", style={'color': '#000', 'fontSize': '28px', 'margin': '0', 'fontWeight': 'bold'}),
                 html.P("Actos por año", style={'color': '#444', 'fontSize': '18px', 'margin': '5px 0'}),
-                html.P("Actualización: Junio 2026", style={'color': '#999', 'fontSize': '14px', 'fontStyle': 'italic'}),
+                html.P("Actualización: Abril 2026", style={'color': '#999', 'fontSize': '14px', 'fontStyle': 'italic'}),
             ]),
             html.Div(style={'textAlign': 'right', 'fontSize': '13px', 'color': '#666'}, children=[
                 html.Span("Dependencias: "), html.Strong("Todas", id='txt-dep-vol', style={'backgroundColor': '#7a8c89', 'color': 'white', 'padding': '4px 12px', 'borderRadius': '15px'}),
@@ -299,7 +269,7 @@ app.layout = html.Div(style={'backgroundColor': '#fcfcfc', 'padding': '40px', 'f
         html.Div(style={'marginBottom': '20px'}, children=[
             html.H2("Distribución de trámites por sector", style={'color': '#000', 'fontSize': '28px', 'margin': '0', 'fontWeight': 'bold'}),
             html.P("Comparativa por cantidad de trámites", style={'color': '#444', 'fontSize': '18px', 'margin': '5px 0'}),
-            html.P("Actualización: Junio 2026", style={'color': '#999', 'fontSize': '14px', 'fontStyle': 'italic'}),
+            html.P("Actualización: Abril 2026", style={'color': '#999', 'fontSize': '14px', 'fontStyle': 'italic'}),
         ]),
         dcc.Graph(id='treemap-sectores', config={'displayModeBar': False})
     ]),
